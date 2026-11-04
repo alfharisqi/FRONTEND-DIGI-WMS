@@ -643,6 +643,31 @@ export default function DashboardOverviewPage({
   // MENU 2: MANAJEMEN USER (RBAC) & AUDIT LOG KEAMANAN (Menu Khusus Orang 4)
   // ============================================================================
   if (activeMenu === 'users') {
+    // Proteksi RBAC: Jangan tampilkan halaman Manajemen User jika bukan Admin atau Supervisor
+    if (!isAdminOrSupervisor) {
+      return (
+        <div className="bg-white p-12 rounded-2xl border border-slate-200 text-center space-y-4 shadow-sm max-w-xl mx-auto my-12">
+          <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-2xl flex items-center justify-center mx-auto text-3xl shadow-inner border border-rose-100">
+            🔒
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900">Akses Halaman Dibatasi (RBAC Guard)</h3>
+            <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+              Halaman <b>Manajemen User (RBAC)</b> hanya dapat diakses oleh akun dengan jabatan <b>ADMIN</b> atau <b>SUPERVISOR</b>. Sesi Anda saat ini ({currentUser?.full_name || currentUser?.username}) terdaftar dengan jabatan <b>{currentUser?.role || 'Staff'}</b>.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => switchTab?.('dashboard')}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-md shadow-blue-600/20 transition-all inline-flex items-center space-x-2"
+            >
+              <span>← Kembali ke Dashboard Utama</span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     const filteredUsers = users.filter((u) => {
       const matchSearch =
         u.full_name?.toLowerCase().includes(userSearch.toLowerCase()) ||

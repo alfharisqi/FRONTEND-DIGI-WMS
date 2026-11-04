@@ -24,6 +24,11 @@ export default function App() {
     }
   });
 
+  // Guard Hak Akses RBAC: Khusus ADMIN & SUPERVISOR
+  const roleUpper = String(currentUser?.role || '').toUpperCase();
+  const isAdminOrSupervisor =
+    roleUpper.includes('ADMIN') || roleUpper.includes('SUPERVISOR');
+
   // Modal Health Check Diagnostik Server & Infrastruktur (Orang 4)
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [healthData, setHealthData] = useState(null);
@@ -105,7 +110,18 @@ export default function App() {
     fetchServerHealth();
   };
 
+  // Proteksi otomatis: jika tab aktif adalah 'users' tapi user bukan Admin/Supervisor, kembalikan ke dashboard
+  useEffect(() => {
+    if (activeTab === 'users' && !isAdminOrSupervisor) {
+      setActiveTab('dashboard');
+    }
+  }, [currentUser, activeTab, isAdminOrSupervisor]);
+
   const switchTab = (tabId) => {
+    if (tabId === 'users' && !isAdminOrSupervisor) {
+      showNotification('Akses Terbatas: Menu Manajemen User hanya untuk Admin / Supervisor', 'error');
+      return;
+    }
     setActiveTab(tabId);
     setSidebarOpen(false);
   };
@@ -338,10 +354,12 @@ export default function App() {
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mt-5 mb-1 pt-3">
             Sistem & Analitik
           </p>
-          <button onClick={() => switchTab('users')} className={navClass('users')}>
-            <span>👥</span>
-            <span>Manajemen User (RBAC)</span>
-          </button>
+          {isAdminOrSupervisor && (
+            <button onClick={() => switchTab('users')} className={navClass('users')}>
+              <span>👥</span>
+              <span>Manajemen User (RBAC)</span>
+            </button>
+          )}
           <button onClick={() => switchTab('laporan')} className={navClass('laporan')}>
             <span>📈</span>
             <span>Laporan & Analitik</span>
