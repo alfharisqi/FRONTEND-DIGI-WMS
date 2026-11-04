@@ -358,138 +358,149 @@ export default function DashboardOverviewPage({
   );
 
   // ============================================================================
-  // MENU 1: DASHBOARD UTAMA (Persis Template Awal digiwms.html)
+  // MENU 1: DASHBOARD UTAMA (Tampilan Simpel, Bersih & Profesional)
   // ============================================================================
   if (activeMenu === 'dashboard') {
     return (
       <div className="space-y-6">
-        {/* Welcome Banner */}
-        <div className="bg-gradient-to-r from-blue-700 via-blue-600 to-indigo-700 rounded-2xl p-6 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center relative overflow-hidden">
-          <div className="absolute -right-10 -bottom-10 w-60 h-60 bg-white/10 rounded-full blur-2xl pointer-events-none"></div>
-          <div className="relative z-10 max-w-xl">
-            <div className="flex items-center space-x-2">
-              <span className="bg-blue-500/50 text-blue-100 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">
-                DIGI WMS v2.5
+        {/* Compact Clean Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                Ringkasan Gudang
+              </h1>
+              <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Supabase Cloud Connected</span>
               </span>
-              <span className="bg-amber-400 text-slate-950 text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center space-x-1">
-                <span>📡</span>
-                <span>{mqttConnected ? 'RFID & EMQX Active' : 'RFID Sim Mode'}</span>
-              </span>
+              {mqttConnected && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200/60">
+                  EMQX Active
+                </span>
+              )}
             </div>
-            <h1 className="text-2xl sm:text-3xl font-bold mt-2">
-              Kelola Gudang Lebih Cepat, Tepat, & Aman
-            </h1>
-            <p className="text-blue-100 text-sm mt-1">
-              Sistem terintegrasi RFID real-time untuk pemantauan stok, penerimaan, opname instan, hingga alarm gerbang keluar.
+            <p className="text-xs text-slate-500 mt-1">
+              Pemantauan stok inventaris real-time, penerimaan barang, dan status portal gerbang RFID.
             </p>
           </div>
-          <div className="mt-4 md:mt-0 relative z-10 flex flex-wrap gap-2.5">
+          <div className="flex items-center space-x-2.5 shrink-0">
+            <button
+              onClick={handleDownloadCsvReport}
+              className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-sm transition inline-flex items-center space-x-1.5"
+              title="Unduh Rekap Format CSV"
+            >
+              <span>📥</span>
+              <span>Ekspor CSV</span>
+            </button>
             <button
               onClick={() => switchTab?.('rfid-opname')}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold px-4 py-2.5 rounded-xl text-sm shadow-md transition-all flex items-center space-x-2"
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm shadow-blue-600/20 transition inline-flex items-center space-x-1.5"
             >
               <span>🔍</span>
-              <span>Scan Opname</span>
-            </button>
-            <button
-              onClick={() => switchTab?.('rfid-gate')}
-              className="bg-white text-blue-700 hover:bg-blue-50 font-semibold px-4 py-2.5 rounded-xl text-sm shadow-md transition-all flex items-center space-x-2"
-            >
-              <span>🚨</span>
-              <span>Gate Alarm</span>
-            </button>
-            <button
-              onClick={() => openAddProductModal?.()}
-              className="bg-blue-800/80 hover:bg-blue-900 text-white font-semibold px-4 py-2.5 rounded-xl text-sm border border-blue-400/30 shadow-md transition-all flex items-center space-x-2"
-            >
-              <span>➕</span>
-              <span>Masuk Barang</span>
+              <span>Opname Cepat</span>
             </button>
           </div>
         </div>
 
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Total Stok
-              </span>
-              <div className="bg-blue-50 text-blue-600 p-2.5 rounded-xl text-lg">📦</div>
-            </div>
-            <div className="mt-4 flex items-baseline justify-between">
-              <h3 className="text-3xl font-bold text-slate-900">{kpis.totalPhysicalStock}</h3>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
-                {kpis.totalSkus} SKU Aktif
+        {/* 4 Clean Metric Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <span>Total Stok Fisik</span>
+              <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
+                {kpis.totalSkus} SKU
               </span>
             </div>
+            <div className="mt-3 flex items-baseline space-x-2">
+              <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                {kpis.totalPhysicalStock}
+              </span>
+              <span className="text-xs text-slate-400 font-medium">unit</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
+              <span className="text-emerald-500 font-bold">✓</span>
+              <span>Saldo terverifikasi dari ledger</span>
+            </p>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Penerimaan (GRN)
-              </span>
-              <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl text-lg">🚚</div>
-            </div>
-            <div className="mt-4 flex items-baseline justify-between">
-              <h3 className="text-3xl font-bold text-slate-900">{kpis.totalInbound || 320}</h3>
-              <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <span>Penerimaan (GRN)</span>
+              <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
                 Terverifikasi
               </span>
             </div>
+            <div className="mt-3 flex items-baseline space-x-2">
+              <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                {kpis.totalInbound || 320}
+              </span>
+              <span className="text-xs text-slate-400 font-medium">unit</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
+              <span className="text-emerald-500 font-bold">✓</span>
+              <span>Dokumen PO masuk selesai</span>
+            </p>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Tag RFID Aktif
-              </span>
-              <div className="bg-cyan-50 text-cyan-600 p-2.5 rounded-xl text-lg">🏷️</div>
-            </div>
-            <div className="mt-4 flex items-baseline justify-between">
-              <h3 className="text-3xl font-bold text-slate-900">{kpis.activeRfidTags}</h3>
-              <span className="text-xs font-semibold text-cyan-600 bg-cyan-50 px-2 py-1 rounded-lg">
-                99.9% Akurat
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <span>Tag RFID Terdata</span>
+              <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
+                920-923 MHz
               </span>
             </div>
+            <div className="mt-3 flex items-baseline space-x-2">
+              <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
+                {kpis.activeRfidTags}
+              </span>
+              <span className="text-xs text-slate-400 font-medium">chip</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
+              <span className="text-indigo-500 font-bold">✓</span>
+              <span>Semua tag ter-encode & aktif</span>
+            </p>
           </div>
 
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                Gate Keamanan
-              </span>
-              <div className="bg-rose-50 text-rose-600 p-2.5 rounded-xl text-lg">🛡️</div>
-            </div>
-            <div className="mt-4 flex items-baseline justify-between">
-              <h3 className="text-3xl font-bold text-emerald-600">AKTIF</h3>
-              <span className="text-xs font-semibold text-rose-600 bg-rose-50 px-2 py-1 rounded-lg">
-                {kpis.gateAlarmsCount} Log Insiden
+          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <span>Keamanan Gerbang</span>
+              <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
+                Portal Standby
               </span>
             </div>
+            <div className="mt-3 flex items-baseline space-x-2">
+              <span className="text-2xl font-extrabold text-emerald-600 tracking-tight">
+                TERLINDUNGI
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
+              <span className="text-emerald-500 font-bold">✓</span>
+              <span>{kpis.gateAlarmsCount || 0} alarm sirine tercatat</span>
+            </p>
           </div>
         </div>
 
-        {/* Main Dashboard Grid (Chart + Low Stock Items) */}
+        {/* Main Grid: Chart (65%) & Low Stock Alert (35%) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          {/* Sisi Kiri: Grafik Tren Mutasi Stok Ramping */}
+          <div className="lg:col-span-2 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h3 className="font-bold text-slate-900 text-base">
-                  Pergerakan Stok & Audit RFID
+                  Tren Pergerakan Stok
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Grafik tren keluar masuk inventaris ({chartPeriod === '7d' ? '7 Hari' : '30 Hari'} terakhir)
+                  Aktivitas masuk, keluar, dan opname ({chartPeriod === '7d' ? '7 Hari' : '30 Hari'} terakhir)
                 </p>
               </div>
-              <div className="flex space-x-2">
+              <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
                 <button
                   onClick={() => setChartPeriod('7d')}
                   className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
                     chartPeriod === '7d'
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   7 Hari
@@ -498,8 +509,8 @@ export default function DashboardOverviewPage({
                   onClick={() => setChartPeriod('30d')}
                   className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
                     chartPeriod === '30d'
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-slate-600 hover:bg-slate-100'
+                      ? 'bg-white text-slate-900 shadow-sm'
+                      : 'text-slate-500 hover:text-slate-900'
                   }`}
                 >
                   30 Hari
@@ -507,31 +518,31 @@ export default function DashboardOverviewPage({
               </div>
             </div>
 
-            <div className="h-64 flex items-end gap-4 pt-6 pb-2 px-3 border-b border-slate-200 bg-slate-50/50 rounded-xl">
+            <div className="h-64 flex items-end gap-3 sm:gap-4 pt-6 pb-2 px-3 border-b border-slate-100 bg-slate-50/40 rounded-xl">
               {chartSeries.map((item, idx) => {
                 const inH = Math.round(((item.inbound || 0) / maxChartVal) * 180);
                 const outH = Math.round(((item.outbound || 0) / maxChartVal) * 180);
                 const opnH = Math.round(((item.opname || 0) / maxChartVal) * 180);
                 return (
                   <div key={idx} className="flex-1 flex flex-col items-center group">
-                    <div className="w-full flex items-end justify-center gap-1.5 h-48">
+                    <div className="w-full flex items-end justify-center gap-1 sm:gap-1.5 h-48">
                       <div
                         style={{ height: `${Math.max(inH, 8)}px` }}
                         title={`Inbound: +${item.inbound}`}
-                        className="w-3 sm:w-4 bg-blue-600 hover:bg-blue-500 rounded-t-md transition-all"
+                        className="w-2.5 sm:w-3.5 bg-blue-600 hover:bg-blue-500 rounded-t-sm transition-all"
                       />
                       <div
                         style={{ height: `${Math.max(outH, 8)}px` }}
                         title={`Outbound: -${item.outbound}`}
-                        className="w-3 sm:w-4 bg-rose-500 hover:bg-rose-400 rounded-t-md transition-all"
+                        className="w-2.5 sm:w-3.5 bg-rose-500 hover:bg-rose-400 rounded-t-sm transition-all"
                       />
                       <div
                         style={{ height: `${Math.max(opnH, 6)}px` }}
                         title={`Audit Opname: ${item.opname}`}
-                        className="w-3 sm:w-4 bg-emerald-500 hover:bg-emerald-400 rounded-t-md transition-all"
+                        className="w-2.5 sm:w-3.5 bg-emerald-500 hover:bg-emerald-400 rounded-t-sm transition-all"
                       />
                     </div>
-                    <span className="mt-2 text-xs font-semibold text-slate-600">{item.label}</span>
+                    <span className="mt-2 text-[11px] font-semibold text-slate-500">{item.label}</span>
                   </div>
                 );
               })}
@@ -540,99 +551,83 @@ export default function DashboardOverviewPage({
             <div className="flex flex-wrap items-center justify-between gap-4 mt-4 text-xs text-slate-500">
               <div className="flex items-center gap-4">
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-sm bg-blue-600 inline-block"></span> Inbound (GRN)
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span> Inbound (GRN)
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-sm bg-rose-500 inline-block"></span> Outbound / POS
+                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Outbound (POS)
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-3 h-3 rounded-sm bg-emerald-500 inline-block"></span> Audit RFID Opname
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Opname RFID
                 </span>
               </div>
-              <span className="font-mono text-[11px] text-slate-400">
-                Sumber: v_product_stock_ledger
+              <span className="font-mono text-[10px] text-slate-400">
+                Data real-time: v_product_stock_ledger
               </span>
             </div>
           </div>
 
-          {/* Stok Terendah (Low Stock) */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
+          {/* Sisi Kanan: Peringatan Stok Kritis Berbasis Progress Bar */}
+          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between mb-4">
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">Stok Kritis / Restock</h3>
-                  <p className="text-xs text-slate-500">Barang yang memerlukan restock segera</p>
+                  <h3 className="font-bold text-slate-900 text-base">Stok Kritis</h3>
+                  <p className="text-xs text-slate-500">Item mendekati batas minimum aman</p>
                 </div>
                 <button
                   onClick={() => switchTab?.('stok')}
                   className="text-xs text-blue-600 font-semibold hover:underline"
                 >
-                  Lihat Semua
+                  Lihat Semua →
                 </button>
               </div>
+
               <div className="space-y-3">
                 {lowStockItems.length === 0 ? (
                   <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-700 font-medium">
-                    Semua stok SKU berada di atas batas minimum aman.
+                    Semua stok barang aman di atas batas minimum.
                   </div>
                 ) : (
-                  lowStockItems.slice(0, 4).map((item) => (
-                    <div
-                      key={item.id || item.sku}
-                      className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold text-slate-800">{item.name}</p>
-                        <span className="text-xs text-slate-400">
+                  lowStockItems.slice(0, 4).map((item) => {
+                    const current = Number(item.current_stock);
+                    const minStock = Number(item.min_stock || 20);
+                    const percentage = Math.min(100, Math.round((current / minStock) * 100));
+                    return (
+                      <div
+                        key={item.id || item.sku}
+                        className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 hover:border-slate-200 transition"
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <p className="text-xs font-bold text-slate-800 truncate mr-2">{item.name}</p>
+                          <span className="text-[11px] font-bold text-rose-600 bg-rose-50 border border-rose-200/60 px-2 py-0.5 rounded-md shrink-0">
+                            {current} / {minStock} unit
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              percentage <= 75 ? 'bg-rose-500' : 'bg-amber-500'
+                            }`}
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-slate-400 mt-1 font-mono">
                           {item.sku} • {item.category}
-                        </span>
+                        </p>
                       </div>
-                      <span className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg">
-                        Sisa {item.current_stock}
-                      </span>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
+
             <button
               onClick={() => openAddProductModal?.()}
-              className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium py-2.5 rounded-xl text-sm border border-slate-200 transition-all flex items-center justify-center space-x-2"
+              className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold py-2.5 rounded-xl text-xs border border-slate-200 transition-all flex items-center justify-center space-x-2 shadow-sm"
             >
               <span>➕</span>
-              <span>Tambah Restock Barang</span>
+              <span>Tambah / Masuk Barang Baru</span>
             </button>
-          </div>
-        </div>
-
-        {/* Warehouse RFID Highlights */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start space-x-4">
-            <div className="bg-blue-100 text-blue-600 p-3 rounded-xl shrink-0 text-xl">📡</div>
-            <div>
-              <h4 className="font-bold text-slate-900 text-sm">Opname Cepat Nirkabel</h4>
-              <p className="text-xs text-slate-500 mt-1">
-                Gunakan handheld reader UHF (Chainway/Zebra) untuk menghitung ratusan barang dalam hitungan detik per rak.
-              </p>
-            </div>
-          </div>
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start space-x-4">
-            <div className="bg-rose-100 text-rose-600 p-3 rounded-xl shrink-0 text-xl">🚨</div>
-            <div>
-              <h4 className="font-bold text-slate-900 text-sm">Gate Alarm & Pencegah Pencurian</h4>
-              <p className="text-xs text-slate-500 mt-1">
-                Sirine dan lampu strobo menyala otomatis jika barang dibawa keluar tanpa izin (Authorized Out / Gate Pass).
-              </p>
-            </div>
-          </div>
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-start space-x-4">
-            <div className="bg-emerald-100 text-emerald-600 p-3 rounded-xl shrink-0 text-xl">📜</div>
-            <div>
-              <h4 className="font-bold text-slate-900 text-sm">Buku Besar Pergerakan (Ledger)</h4>
-              <p className="text-xs text-slate-500 mt-1">
-                Setiap perpindahan, penjualan, dan penyesuaian dicatat sebagai transaksi immutable tanpa menimpa data mentah.
-              </p>
-            </div>
           </div>
         </div>
       </div>
