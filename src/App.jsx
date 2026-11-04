@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LayoutDashboard, Truck, Boxes, ScanLine, Package, Radio } from 'lucide-react';
+import { LayoutDashboard, Truck, Boxes, ScanLine, Package, Radio, ShieldCheck } from 'lucide-react';
 import { createEmqxWebSocketClient } from './services/mqttClient';
 import DashboardOverviewPage from './modules/orang4-dashboard/DashboardOverviewPage';
 import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
@@ -11,6 +11,12 @@ export default function App() {
   const [mqttConnected, setMqttConnected] = useState(false);
   const [lastMqttEvent, setLastMqttEvent] = useState(null);
   const [toastMessage, setToastMessage] = useState(null);
+  const [currentUser, setCurrentUser] = useState({
+    id: 1,
+    username: 'sarah.jenkins',
+    full_name: 'Sarah Jenkins',
+    role: 'SUPERVISOR',
+  });
 
   const showNotification = (msg) => {
     setToastMessage(msg);
@@ -32,7 +38,7 @@ export default function App() {
   }, []);
 
   const navItems = [
-    { id: 'orang4', label: '1. Dashboard & Server (Orang 4)', icon: LayoutDashboard, badge: 'Pondasi' },
+    { id: 'orang4', label: '1. Dashboard & Server (Orang 4)', icon: LayoutDashboard, badge: 'Selesai' },
     { id: 'orang1', label: '2. Inbound & Tagging (Orang 1)', icon: Truck, badge: 'GRN/EPC' },
     { id: 'orang2', label: '3. Rak & Ledger Stok (Orang 2)', icon: Boxes, badge: 'Putaway' },
     { id: 'orang3', label: '4. Opname Handheld (Orang 3)', icon: ScanLine, badge: 'Audit' },
@@ -87,8 +93,18 @@ export default function App() {
           })}
         </nav>
 
-        <div className="p-4 bg-slate-950/50 border-t border-slate-800 text-xs text-slate-400">
+        {/* Profil Pengguna Aktif (Dikelola oleh Modul Orang 4) */}
+        <div className="p-4 bg-slate-950/60 border-t border-slate-800 space-y-2.5">
           <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold text-white">{currentUser.full_name}</p>
+              <span className="text-[10px] text-indigo-400 font-semibold uppercase">
+                Role: {currentUser.role}
+              </span>
+            </div>
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+          </div>
+          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-slate-800/80">
             <span>EMQX Broker (WS 8083):</span>
             <span
               className={`font-bold flex items-center gap-1 ${
@@ -108,9 +124,14 @@ export default function App() {
           <h1 className="font-bold text-slate-800 text-sm sm:text-base">
             Workspace Kolaborasi Tim 4 Orang — DIGI WMS (React.js + Fastify + PostgreSQL + EMQX)
           </h1>
-          <span className="text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl font-medium">
-            UHF RFID 920–923 MHz
-          </span>
+          <div className="flex items-center space-x-2">
+            <span className="text-xs bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-xl font-bold border border-indigo-200">
+              {currentUser.full_name} ({currentUser.role})
+            </span>
+            <span className="hidden sm:inline-block text-xs bg-slate-100 text-slate-700 px-3 py-1.5 rounded-xl font-medium">
+              UHF RFID 920–923 MHz
+            </span>
+          </div>
         </header>
 
         <div className="flex-1 overflow-y-auto p-6">
@@ -118,6 +139,8 @@ export default function App() {
             <DashboardOverviewPage
               mqttConnected={mqttConnected}
               lastMqttEvent={lastMqttEvent}
+              currentUser={currentUser}
+              onSwitchUser={(u) => setCurrentUser(u)}
               onNotify={showNotification}
             />
           )}
