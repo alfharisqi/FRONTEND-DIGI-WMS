@@ -8,7 +8,6 @@ export default function DashboardOverviewPage({
   lastEvent,
   mqttConnected,
   currentUser,
-  onUserSwitch,
   showNotification,
 }) {
   const [summary, setSummary] = useState(null);
@@ -16,16 +15,30 @@ export default function DashboardOverviewPage({
   const [chartPeriod, setChartPeriod] = useState('7d');
   const [loading, setLoading] = useState(true);
 
-  // State RBAC & Audit Logs (ditampilkan di menu Laporan & Analitik / Sistem)
+  // State Manajemen User (RBAC) & Audit Logs
   const [users, setUsers] = useState([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState('ALL');
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditRoleFilter, setAuditRoleFilter] = useState('ALL');
+
+  // Modal Tambah User Baru
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
   const [newUserForm, setNewUserForm] = useState({
     username: '',
+    password: '123456',
     full_name: '',
-    role: 'OPERATOR',
+    role: 'WAREHOUSE_STAFF',
   });
   const [savingUser, setSavingUser] = useState(false);
+
+  // Modal Edit User / Reset Password
+  const [editingUser, setEditingUser] = useState(null);
+  const [editUserForm, setEditUserForm] = useState({
+    full_name: '',
+    role: 'WAREHOUSE_STAFF',
+    password: '',
+  });
 
   // State Pengaturan Gudang & RFID
   const [settings, setSettings] = useState(null);
@@ -95,30 +108,6 @@ export default function DashboardOverviewPage({
     }
   }, [lastEvent]);
 
-  const handleRoleSwitch = async (username) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username }),
-      });
-      const json = await res.json();
-      if (res.ok && (json.data?.user || json.user)) {
-        const loggedUser = json.data?.user || json.user;
-        if (onUserSwitch) onUserSwitch(loggedUser);
-        showNotification?.(
-          json.message || `Sesi beralih ke ${loggedUser.full_name} (${loggedUser.role})`,
-          'success'
-        );
-        fetchUsersAndLogs();
-      } else {
-        showNotification?.(json.message || 'Gagal mengganti sesi pengguna', 'error');
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
   const handleAddUser = async (e) => {
     e.preventDefault();
     if (!isAdminOrSupervisor) {
@@ -138,8 +127,14 @@ export default function DashboardOverviewPage({
       });
       const json = await res.json();
       if (res.ok) {
-        showNotification?.(json.message || 'User berhasil ditambahkan', 'success');
-        setNewUserForm({ username: '', full_name: '', role: 'OPERATOR' });
+        showNotification?.(json.message || 'Personel baru berhasil didaftarkan!', 'success');
+        setNewUserForm({
+          username: '',
+          password: '123456',
+          full_name: '',
+          role: 'WAREHOUSE_STAFF',
+        });
+        setShowAddUserModal(false);
         fetchUsersAndLogs();
       } else {
         showNotification?.(json.message || 'Gagal menambah user', 'error');
@@ -148,6 +143,44 @@ export default function DashboardOverviewPage({
       console.error(err);
     } finally {
       setSavingUser(false);
+    }
+  };
+
+  const openEditModal = (u) => {
+    if (!isAdminOrSupervisor) {
+      showNotification?.(
+        'Akses Ditolak (RBAC Guard): Hanya ADMIN/SUPERVISOR yang dapat mengedit personel!',
+        'error'
+      );
+      return;
+    }
+    setEditingUser(u);
+    setEditUserForm({
+      full_name: u.full_name,
+      role: u.role,
+      password: '',
+    });
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${editingUser.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editUserForm),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showNotification?.(json.message || 'Data personel berhasil diperbarui!', 'success');
+        setEditingUser(null);
+        fetchUsersAndLogs();
+      } else {
+        showNotification?.(json.message || 'Gagal memperbarui personel', 'error');
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -164,7 +197,33 @@ export default function DashboardOverviewPage({
         method: 'PATCH',
       });
       if (res.ok) {
-        showNotification?.('Status personel diperbarui', 'info');
+        showNotification?.('Status aktif personel berhasil diperbarui', 'info');
+        fetchUsersAndLogs();
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteUser = async (u) => {
+    if (!isAdminOrSupervisor) {
+      showNotification?.(
+        'Akses Ditolak (RBAC Guard): Hanya ADMIN/SUPERVISOR yang dapat menghapus personel!',
+        'error'
+      );
+      return;
+    }
+    if (u.username === currentUser?.username) {
+      showNotification?.('Tidak dapat menghapus akun yang sedang digunakan login!', 'error');
+      return;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/users/${u.id}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showNotification?.(json.message || `Akun @${u.username} dihapus`, 'info');
         fetchUsersAndLogs();
       }
     } catch (err) {
@@ -229,7 +288,6 @@ export default function DashboardOverviewPage({
     }
   };
 
-  // Fitur Unduh File CSV Asli (Stok + Audit Logs) untuk Modul Orang 4
   const handleDownloadCsvReport = () => {
     const lines = [];
     lines.push('=== LAPORAN ANALITIK INVENTARIS & AUDIT KEAMANAN DIGI WMS ===');
@@ -352,7 +410,6 @@ export default function DashboardOverviewPage({
 
         {/* Statistics Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-          {/* Total Stok */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -368,7 +425,6 @@ export default function DashboardOverviewPage({
             </div>
           </div>
 
-          {/* Penerimaan (GRN) */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -384,7 +440,6 @@ export default function DashboardOverviewPage({
             </div>
           </div>
 
-          {/* Tag RFID Aktif */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -400,7 +455,6 @@ export default function DashboardOverviewPage({
             </div>
           </div>
 
-          {/* Status Gate Keamanan */}
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
@@ -419,7 +473,6 @@ export default function DashboardOverviewPage({
 
         {/* Main Dashboard Grid (Chart + Low Stock Items) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Pergerakan Stok Chart */}
           <div className="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -454,7 +507,6 @@ export default function DashboardOverviewPage({
               </div>
             </div>
 
-            {/* Interactive Bar Chart */}
             <div className="h-64 flex items-end gap-4 pt-6 pb-2 px-3 border-b border-slate-200 bg-slate-50/50 rounded-xl">
               {chartSeries.map((item, idx) => {
                 const inH = Math.round(((item.inbound || 0) / maxChartVal) * 180);
@@ -588,18 +640,452 @@ export default function DashboardOverviewPage({
   }
 
   // ============================================================================
-  // MENU 2: LAPORAN, ANALITIK, MANAJEMEN USER (RBAC) & AUDIT LOG
+  // MENU 2: MANAJEMEN USER (RBAC) & AUDIT LOG KEAMANAN (Menu Khusus Orang 4)
+  // ============================================================================
+  if (activeMenu === 'users') {
+    const filteredUsers = users.filter((u) => {
+      const matchSearch =
+        u.full_name?.toLowerCase().includes(userSearch.toLowerCase()) ||
+        u.username?.toLowerCase().includes(userSearch.toLowerCase());
+      const matchRole =
+        userRoleFilter === 'ALL' ||
+        String(u.role).toUpperCase().includes(userRoleFilter.toUpperCase());
+      return matchSearch && matchRole;
+    });
+
+    const activeCount = users.filter((u) => u.is_active).length;
+    const adminSupervisorCount = users.filter(
+      (u) =>
+        String(u.role).toUpperCase().includes('ADMIN') ||
+        String(u.role).toUpperCase().includes('SUPERVISOR')
+    ).length;
+
+    return (
+      <div className="space-y-6">
+        {/* Header Manajemen User */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <div className="flex items-center space-x-2">
+              <h2 className="text-xl font-bold text-slate-900">
+                Manajemen User (RBAC) & Otorisasi Sistem
+              </h2>
+              <span className="bg-blue-50 text-blue-700 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-blue-200">
+                Role-Based Access Control
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">
+              Kelola akun personel gudang, atur hak akses per jabatan, reset password, dan pantau jejak audit keamanan.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              if (!isAdminOrSupervisor) {
+                showNotification?.(
+                  'Akses Ditolak (RBAC Guard): Hanya ADMIN atau SUPERVISOR yang dapat menambah user!',
+                  'error'
+                );
+                return;
+              }
+              setShowAddUserModal(true);
+            }}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-blue-600/20 transition-all flex items-center space-x-2"
+          >
+            <span>➕</span>
+            <span>Tambah Personel Baru</span>
+          </button>
+        </div>
+
+        {!isAdminOrSupervisor && (
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs text-amber-800 flex items-center justify-between">
+            <span>
+              🔒 <b>Mode Terbatas (RBAC Guard Aktif):</b> Anda sedang login sebagai{' '}
+              <b>{currentUser?.full_name} ({currentUser?.role})</b>. Penambahan, pengeditan, dan penghapusan akun hanya dapat dilakukan oleh <b>ADMIN</b> atau <b>SUPERVISOR</b>.
+            </span>
+          </div>
+        )}
+
+        {/* 4 Summary Cards Manajemen User */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Total Personel</span>
+            <p className="text-2xl font-extrabold text-slate-900 mt-1">{users.length} Akun</p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-xs font-semibold text-slate-500 uppercase">Status Aktif</span>
+            <p className="text-2xl font-extrabold text-emerald-600 mt-1">{activeCount} Aktif</p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-xs font-semibold text-slate-500 uppercase">
+              Admin & Supervisor
+            </span>
+            <p className="text-2xl font-extrabold text-blue-600 mt-1">
+              {adminSupervisorCount} Otorisator
+            </p>
+          </div>
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+            <span className="text-xs font-semibold text-slate-500 uppercase">
+              Jejak Audit Log
+            </span>
+            <p className="text-2xl font-extrabold text-indigo-600 mt-1">
+              {auditLogs.length} Aktivitas
+            </p>
+          </div>
+        </div>
+
+        {/* Tabel Daftar Pengguna (CRUD Lengkap) */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
+            <input
+              type="text"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Cari nama personel atau username..."
+              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <select
+              value={userRoleFilter}
+              onChange={(e) => setUserRoleFilter(e.target.value)}
+              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none"
+            >
+              <option value="ALL">Semua Role / Jabatan</option>
+              <option value="ADMIN">ADMIN (Full Access)</option>
+              <option value="SUPERVISOR">SUPERVISOR (Approval Opname)</option>
+              <option value="WAREHOUSE_STAFF">WAREHOUSE_STAFF (Operator Inbound/Rak)</option>
+              <option value="SECURITY">SECURITY / KASIR_POS (Gate & POS)</option>
+            </select>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                  <th className="p-4">ID</th>
+                  <th className="p-4">Nama Lengkap</th>
+                  <th className="p-4">Username Login</th>
+                  <th className="p-4">Role / Jabatan (RBAC)</th>
+                  <th className="p-4">Status Akun</th>
+                  <th className="p-4">Terdaftar Sejak</th>
+                  <th className="p-4 text-right">Aksi Manajemen</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {filteredUsers.map((u) => {
+                  const isSelf = u.username === currentUser?.username;
+                  return (
+                    <tr key={u.id} className="hover:bg-slate-50">
+                      <td className="p-4 font-mono text-xs text-slate-400">#{u.id}</td>
+                      <td className="p-4 font-bold text-slate-900">
+                        {u.full_name}
+                        {isSelf && (
+                          <span className="ml-2 text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full">
+                            Anda
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-4 font-mono text-blue-600 font-semibold">@{u.username}</td>
+                      <td className="p-4">
+                        <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-1 rounded-lg font-bold font-mono">
+                          {u.role}
+                        </span>
+                      </td>
+                      <td className="p-4">
+                        <span
+                          className={`text-xs px-2.5 py-1 rounded-lg font-bold ${
+                            u.is_active
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200'
+                          }`}
+                        >
+                          {u.is_active ? 'Aktif' : 'Nonaktif'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-xs text-slate-400">
+                        {new Date(u.created_at).toLocaleDateString('id-ID')}
+                      </td>
+                      <td className="p-4 text-right space-x-2">
+                        <button
+                          onClick={() => openEditModal(u)}
+                          className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold transition"
+                        >
+                          Edit / Password
+                        </button>
+                        <button
+                          onClick={() => handleToggleUserStatus(u.id)}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
+                        >
+                          {u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                        </button>
+                        {!isSelf && (
+                          <button
+                            onClick={() => handleDeleteUser(u)}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-semibold transition"
+                          >
+                            Hapus
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Tabel System Audit Logs */}
+        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+            <div>
+              <h3 className="font-bold text-slate-900">
+                System Security & Activity Audit Logs
+              </h3>
+              <p className="text-xs text-slate-500">
+                Rekam jejak seluruh login/logout personel, perubahan akun RBAC, dan konfigurasi sistem
+              </p>
+            </div>
+            <select
+              value={auditRoleFilter}
+              onChange={(e) => {
+                setAuditRoleFilter(e.target.value);
+                fetchUsersAndLogs(e.target.value);
+              }}
+              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
+            >
+              <option value="ALL">Semua Role</option>
+              <option value="ADMIN">ADMIN</option>
+              <option value="SUPERVISOR">SUPERVISOR</option>
+              <option value="WAREHOUSE_STAFF">WAREHOUSE_STAFF</option>
+              <option value="SECURITY">SECURITY / KASIR</option>
+            </select>
+          </div>
+          <div className="overflow-x-auto max-h-80 overflow-y-auto custom-scrollbar">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                  <th className="p-3">Waktu</th>
+                  <th className="p-3">Personel & Role</th>
+                  <th className="p-3">Aksi Sistem</th>
+                  <th className="p-3">Detail Aktivitas</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {auditLogs.map((log) => (
+                  <tr key={log.id} className="hover:bg-slate-50">
+                    <td className="p-3 text-slate-400 whitespace-nowrap">
+                      {new Date(log.created_at).toLocaleTimeString('id-ID')}
+                    </td>
+                    <td className="p-3 font-semibold">
+                      {log.actor_username}{' '}
+                      <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded ml-1">
+                        {log.actor_role}
+                      </span>
+                    </td>
+                    <td className="p-3 font-mono font-bold text-slate-800">{log.action}</td>
+                    <td className="p-3 text-slate-600">{log.details}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Modal Tambah Personel Baru */}
+        {showAddUserModal && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-900">
+                  Daftarkan Personel Gudang Baru
+                </h3>
+                <button
+                  onClick={() => setShowAddUserModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={handleAddUser} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Nama Lengkap Personel
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Rina Permata"
+                    value={newUserForm.full_name}
+                    onChange={(e) =>
+                      setNewUserForm({ ...newUserForm, full_name: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Username Login
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: rina.kasir"
+                    value={newUserForm.username}
+                    onChange={(e) =>
+                      setNewUserForm({ ...newUserForm, username: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Password Awal
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={newUserForm.password}
+                    onChange={(e) =>
+                      setNewUserForm({ ...newUserForm, password: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Role / Hak Akses (RBAC)
+                  </label>
+                  <select
+                    value={newUserForm.role}
+                    onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  >
+                    <option value="ADMIN">ADMIN (Akses Penuh Sistem)</option>
+                    <option value="SUPERVISOR">SUPERVISOR (Otorisasi & Opname)</option>
+                    <option value="WAREHOUSE_STAFF">WAREHOUSE_STAFF (Operator Gudang)</option>
+                    <option value="SECURITY">SECURITY (Petugas Gate RFID)</option>
+                    <option value="KASIR_POS">KASIR_POS (Kasir & Gate Pass)</option>
+                  </select>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddUserModal(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingUser}
+                    className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-semibold shadow-md"
+                  >
+                    {savingUser ? 'Menyimpan...' : 'Simpan Personel'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Edit Personel / Reset Password */}
+        {editingUser && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-900">
+                  Edit Personel (@{editingUser.username})
+                </h3>
+                <button
+                  onClick={() => setEditingUser(null)}
+                  className="text-slate-400 hover:text-slate-600 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={handleUpdateUser} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Nama Lengkap
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editUserForm.full_name}
+                    onChange={(e) =>
+                      setEditUserForm({ ...editUserForm, full_name: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Role / Jabatan (RBAC)
+                  </label>
+                  <select
+                    value={editUserForm.role}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, role: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  >
+                    <option value="ADMIN">ADMIN (Akses Penuh Sistem)</option>
+                    <option value="SUPERVISOR">SUPERVISOR (Otorisasi & Opname)</option>
+                    <option value="WAREHOUSE_STAFF">WAREHOUSE_STAFF (Operator Gudang)</option>
+                    <option value="SECURITY">SECURITY (Petugas Gate RFID)</option>
+                    <option value="KASIR_POS">KASIR_POS (Kasir & Gate Pass)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Reset Password Baru (Kosongkan jika tidak diubah)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Masukkan password baru..."
+                    value={editUserForm.password}
+                    onChange={(e) =>
+                      setEditUserForm({ ...editUserForm, password: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+                  />
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setEditingUser(null)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-semibold shadow-md"
+                  >
+                    Simpan Perubahan
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // MENU 3: LAPORAN & ANALITIK GUDANG (Persis Template Awal digiwms.html)
   // ============================================================================
   if (activeMenu === 'laporan') {
+    const categories = summary?.categoryDistribution || [];
+    const totalCatStock = Math.max(
+      1,
+      categories.reduce((acc, c) => acc + Number(c.stock || 0), 0)
+    );
+
     return (
       <div className="space-y-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">
-              Laporan Analitik, Manajemen User (RBAC) & Audit Log
-            </h2>
+            <h2 className="text-xl font-bold text-slate-900">Laporan & Analitik Gudang</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Unduh laporan stok CSV/PDF, pantau performa gudang, kelola hak akses pengguna, dan audit keamanan sistem.
+              Unduh laporan stok, turn-over rate, distribusi kategori, dan performa operasional gudang.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -654,176 +1140,31 @@ export default function DashboardOverviewPage({
           </div>
         </div>
 
-        {/* Quick Role Switcher & User Management */}
-        <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-md">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div>
-              <span className="text-xs uppercase tracking-wider font-bold text-blue-400">
-                Simulasi Role-Based Access Control (RBAC)
-              </span>
-              <h3 className="text-lg font-bold mt-1">
-                Sesi Aktif: {currentUser?.full_name} ({currentUser?.role})
-              </h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Klik salah satu akun di bawah untuk berganti Role dan menguji pencatatan Audit Log serta proteksi RBAC Guard:
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {users.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => handleRoleSwitch(u.username)}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition ${
-                    currentUser?.username === u.username
-                      ? 'bg-blue-600 text-white border-blue-400 shadow-md'
-                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
-                  }`}
-                >
-                  {u.full_name} ({u.role})
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Grid Manajemen User & Audit Logs */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Form Tambah User & Daftar User */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-5">
-            <div>
-              <h3 className="font-bold text-slate-900">Tambah Personel Gudang (RBAC)</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Daftarkan operator, supervisor, atau petugas kasir POS
-              </p>
-            </div>
-
-            {!isAdminOrSupervisor && (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-                🔒 <b>Proteksi RBAC Aktif:</b> Anda sedang login sebagai{' '}
-                <b>{currentUser?.role}</b>. Hanya <b>ADMIN</b> atau <b>SUPERVISOR</b> yang dapat menambah atau menonaktifkan personel.
-              </div>
-            )}
-
-            <form onSubmit={handleAddUser} className="space-y-3">
-              <input
-                type="text"
-                required
-                disabled={!isAdminOrSupervisor}
-                placeholder="Username (mis: op_gudang2)"
-                value={newUserForm.username}
-                onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-50"
-              />
-              <input
-                type="text"
-                required
-                disabled={!isAdminOrSupervisor}
-                placeholder="Nama Lengkap"
-                value={newUserForm.full_name}
-                onChange={(e) => setNewUserForm({ ...newUserForm, full_name: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-50"
-              />
-              <select
-                disabled={!isAdminOrSupervisor}
-                value={newUserForm.role}
-                onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-50"
-              >
-                <option value="ADMIN">ADMIN (Full Access)</option>
-                <option value="SUPERVISOR">SUPERVISOR (Approval Opname)</option>
-                <option value="OPERATOR">OPERATOR (Inbound & Putaway)</option>
-                <option value="KASIR_POS">KASIR_POS (POS & Gate Pass)</option>
-              </select>
-              <button
-                type="submit"
-                disabled={savingUser || !isAdminOrSupervisor}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 rounded-xl text-sm shadow-sm transition"
-              >
-                {savingUser ? 'Menyimpan...' : '+ Tambah User'}
-              </button>
-            </form>
-
-            <div className="pt-4 border-t border-slate-100 space-y-2">
-              <p className="text-xs font-semibold text-slate-500 uppercase">Daftar Akun Aktif</p>
-              {users.map((u) => (
-                <div
-                  key={u.id}
-                  className="flex items-center justify-between p-2.5 bg-slate-50 rounded-xl text-xs"
-                >
-                  <div>
-                    <p className="font-bold text-slate-800">{u.full_name}</p>
-                    <span className="text-slate-500 font-mono">
-                      @{u.username} • {u.role}
+        {/* Distribusi Kategori Barang */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <h3 className="font-bold text-slate-900 text-base mb-4">
+            Distribusi Stok Berdasarkan Kategori Barang
+          </h3>
+          <div className="space-y-4">
+            {categories.map((cat, idx) => {
+              const pct = Math.round((Number(cat.stock || 0) / totalCatStock) * 100);
+              return (
+                <div key={idx}>
+                  <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
+                    <span>{cat.category}</span>
+                    <span>
+                      {cat.stock} Unit ({pct}%)
                     </span>
                   </div>
-                  <button
-                    onClick={() => handleToggleUserStatus(u.id)}
-                    className={`px-2.5 py-1 rounded-lg font-semibold ${
-                      u.is_active
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-slate-200 text-slate-600'
-                    }`}
-                  >
-                    {u.is_active ? 'Aktif' : 'Nonaktif'}
-                  </button>
+                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                    <div
+                      style={{ width: `${Math.max(pct, 5)}%` }}
+                      className="bg-blue-600 h-full rounded-full"
+                    />
+                  </div>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* System Audit Logs */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-              <div>
-                <h3 className="font-bold text-slate-900">System Security & Activity Audit Logs</h3>
-                <p className="text-xs text-slate-500">
-                  Rekam jejak seluruh perubahan konfigurasi, login RBAC, dan otorisasi stok
-                </p>
-              </div>
-              <select
-                value={auditRoleFilter}
-                onChange={(e) => {
-                  setAuditRoleFilter(e.target.value);
-                  fetchUsersAndLogs(e.target.value);
-                }}
-                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
-              >
-                <option value="ALL">Semua Role</option>
-                <option value="ADMIN">ADMIN</option>
-                <option value="SUPERVISOR">SUPERVISOR</option>
-                <option value="OPERATOR">OPERATOR</option>
-                <option value="KASIR_POS">KASIR_POS</option>
-              </select>
-            </div>
-            <div className="overflow-x-auto max-h-96 overflow-y-auto custom-scrollbar">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                    <th className="p-3">Waktu</th>
-                    <th className="p-3">User & Role</th>
-                    <th className="p-3">Aksi</th>
-                    <th className="p-3">Detail Aktivitas</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-slate-700">
-                  {auditLogs.map((log) => (
-                    <tr key={log.id} className="hover:bg-slate-50">
-                      <td className="p-3 text-slate-400 whitespace-nowrap">
-                        {new Date(log.created_at).toLocaleTimeString('id-ID')}
-                      </td>
-                      <td className="p-3 font-semibold">
-                        {log.actor_username}{' '}
-                        <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded ml-1">
-                          {log.actor_role}
-                        </span>
-                      </td>
-                      <td className="p-3 font-mono font-bold text-slate-800">{log.action}</td>
-                      <td className="p-3 text-slate-600">{log.details}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -831,7 +1172,7 @@ export default function DashboardOverviewPage({
   }
 
   // ============================================================================
-  // MENU 3: PENGATURAN SISTEM DIGI WMS (Persis Template Awal digiwms.html + EMQX)
+  // MENU 4: PENGATURAN SISTEM DIGI WMS (Persis Template Awal digiwms.html + EMQX)
   // ============================================================================
   if (activeMenu === 'pengaturan') {
     return (
@@ -1017,7 +1358,7 @@ export default function DashboardOverviewPage({
   }
 
   // ============================================================================
-  // MENU 4: FLYER PROMOSI (Persis Template Awal digiwms.html)
+  // MENU 5: FLYER PROMOSI (Persis Template Awal digiwms.html)
   // ============================================================================
   return (
     <div className="space-y-6">

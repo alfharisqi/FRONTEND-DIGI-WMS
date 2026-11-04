@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createMqttSubscription } from './config/mqttClient';
 import { API_BASE_URL } from './config/api';
 import DashboardOverviewPage from './modules/orang4-dashboard/DashboardOverviewPage';
+import LoginPage from './modules/orang4-dashboard/LoginPage';
 import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
@@ -13,18 +14,15 @@ export default function App() {
   const [lastEvent, setLastEvent] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
 
-  // State User Aktif (RBAC Auth — dikelola oleh Orang 4)
-  const [currentUser, setCurrentUser] = useState({
-    id: 1,
-    username: 'admin_wms',
-    full_name: 'Sarah Jenkins',
-    role: 'ADMIN',
+  // State User Aktif (RBAC Auth — dikelola oleh Orang 4 via Halaman Login Resmi)
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('digiwms_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
-
-  // Modal Login / Switch Sesi RBAC dari Sidebar
-  const [showAuthModal, setShowAuthModal] = useState(false);
-  const [availableUsers, setAvailableUsers] = useState([]);
-  const [loginUsername, setLoginUsername] = useState('admin_wms');
 
   // Modal Health Check Diagnostik Server & Infrastruktur (Orang 4)
   const [showHealthModal, setShowHealthModal] = useState(false);
@@ -67,44 +65,23 @@ export default function App() {
     return () => sub.disconnect();
   }, []);
 
-  const openLoginModal = async () => {
-    setShowAuthModal(true);
+  const handleLogout = async () => {
     try {
-      const res = await fetch(`${API_BASE_URL}/users`);
-      const json = await res.json();
-      setAvailableUsers(json.data || []);
-    } catch (err) {
-      console.error('Gagal mengambil daftar akun RBAC:', err);
-    }
-  };
-
-  const handleLoginSubmit = async (usernameToUse) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: usernameToUse || loginUsername }),
+        body: JSON.stringify({
+          username: currentUser?.username,
+          full_name: currentUser?.full_name,
+          role: currentUser?.role,
+        }),
       });
-      const json = await res.json();
-      if (res.ok && (json.data?.user || json.user)) {
-        const loggedUser = json.data?.user || json.user;
-        setCurrentUser(loggedUser);
-        setShowAuthModal(false);
-        showNotification(
-          json.message || `Berhasil login sebagai ${loggedUser.full_name} (${loggedUser.role})`,
-          'success'
-        );
-        setLastEvent({
-          topic: 'digiwms/audit/login',
-          payload: loggedUser,
-          receivedAt: new Date().toLocaleTimeString('id-ID'),
-        });
-      } else {
-        showNotification(json.message || 'Gagal login akun RBAC', 'error');
-      }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Abaikan jika offline
     }
+    localStorage.removeItem('digiwms_user');
+    localStorage.removeItem('digiwms_token');
+    setCurrentUser(null);
   };
 
   const fetchServerHealth = async () => {
@@ -172,6 +149,21 @@ export default function App() {
     }
   };
 
+  // Jika belum login, tampilkan Halaman Login Resmi (Orang 4)
+  if (!currentUser) {
+    return (
+      <LoginPage
+        onLoginSuccess={(loggedUser) => {
+          setCurrentUser(loggedUser);
+          showNotification(
+            `Selamat datang, ${loggedUser.full_name} (${loggedUser.role})`,
+            'success'
+          );
+        }}
+      />
+    );
+  }
+
   const navClass = (tabId) =>
     `nav-item flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left ${
       activeTab === tabId
@@ -181,8 +173,8 @@ export default function App() {
 
   // Pemetaan Menu Template Awal digiwms.html -> 4 Modul Tim (Tanpa Konflik Git)
   const renderMainContent = () => {
-    // 1. Modul Orang 4 (Dashboard, Laporan Analitik/RBAC/Audit, Pengaturan, Flyer)
-    if (['dashboard', 'laporan', 'pengaturan', 'flyer'].includes(activeTab)) {
+    // 1. Modul Orang 4 (Dashboard, Manajemen User RBAC, Laporan Analitik, Pengaturan, Flyer)
+    if (['dashboard', 'users', 'laporan', 'pengaturan', 'flyer'].includes(activeTab)) {
       return (
         <DashboardOverviewPage
           activeMenu={activeTab}
@@ -191,7 +183,6 @@ export default function App() {
           lastEvent={lastEvent}
           mqttConnected={mqttConnected}
           currentUser={currentUser}
-          onUserSwitch={setCurrentUser}
           showNotification={showNotification}
         />
       );
@@ -343,13 +334,17 @@ export default function App() {
             <span>Ledger Pergerakan</span>
           </button>
 
-          {/* Sistem & Analitik */}
+          {/* Sistem & Analitik (Modul Orang 4) */}
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mt-5 mb-1 pt-3">
             Sistem & Analitik
           </p>
+          <button onClick={() => switchTab('users')} className={navClass('users')}>
+            <span>👥</span>
+            <span>Manajemen User (RBAC)</span>
+          </button>
           <button onClick={() => switchTab('laporan')} className={navClass('laporan')}>
             <span>📈</span>
-            <span>Laporan & RBAC Audit</span>
+            <span>Laporan & Analitik</span>
           </button>
           <button onClick={() => switchTab('pengaturan')} className={navClass('pengaturan')}>
             <span>⚙️</span>
@@ -361,28 +356,24 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Sidebar Footer User Profile (Klik untuk Ganti Sesi Login RBAC) */}
-        <div
-          onClick={openLoginModal}
-          className="p-4 bg-slate-950/60 hover:bg-slate-950 border-t border-slate-800 flex items-center space-x-3 cursor-pointer transition-all group"
-          title="Klik untuk Ganti Akun / Login Role RBAC"
-        >
+        {/* Sidebar Footer User Profile + Tombol Logout */}
+        <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex items-center space-x-3">
           <img
             src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
             alt="User"
             className="w-10 h-10 rounded-xl object-cover border border-slate-700"
           />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition">
-              {currentUser.full_name}
-            </p>
-            <p className="text-xs text-blue-400 truncate font-mono">
-              Role: {currentUser.role}
-            </p>
+            <p className="text-sm font-semibold text-white truncate">{currentUser.full_name}</p>
+            <p className="text-xs text-blue-400 truncate font-mono">{currentUser.role}</p>
           </div>
-          <span className="text-xs bg-slate-800 group-hover:bg-blue-600 text-slate-300 group-hover:text-white px-2 py-1 rounded-lg font-semibold transition">
-            Ganti
-          </span>
+          <button
+            onClick={handleLogout}
+            className="text-xs bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 px-2.5 py-1.5 rounded-lg font-semibold transition"
+            title="Keluar dari Sesi (Logout)"
+          >
+            Keluar
+          </button>
         </div>
       </aside>
 
@@ -466,91 +457,7 @@ export default function App() {
         </div>
       </main>
 
-      {/* ================= MODAL 1: LOGIN & SWITCH AKUN RBAC (ORANG 4) ================= */}
-      {showAuthModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">
-                  RBAC Security Portal — Orang 4
-                </span>
-                <h3 className="font-bold text-lg text-slate-900 mt-1">
-                  Ganti Sesi Akun & Hak Akses
-                </h3>
-              </div>
-              <button
-                onClick={() => setShowAuthModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-500 mb-4">
-              Pilih salah satu akun personel di bawah untuk menguji hak akses (RBAC Guard) dan pencatatan otomatis ke <b>System Audit Log</b>:
-            </p>
-
-            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
-              {availableUsers.map((u) => {
-                const isCurrent = currentUser.username === u.username;
-                return (
-                  <button
-                    key={u.id}
-                    disabled={!u.is_active}
-                    onClick={() => handleLoginSubmit(u.username)}
-                    className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition ${
-                      isCurrent
-                        ? 'bg-blue-50 border-blue-500'
-                        : u.is_active
-                        ? 'bg-slate-50 hover:bg-slate-100 border-slate-200'
-                        : 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed'
-                    }`}
-                  >
-                    <div>
-                      <p className="text-sm font-bold text-slate-900">{u.full_name}</p>
-                      <span className="text-xs font-mono text-slate-500">
-                        @{u.username} • {u.role}
-                      </span>
-                    </div>
-                    <span
-                      className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
-                        isCurrent
-                          ? 'bg-blue-600 text-white'
-                          : u.is_active
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-rose-100 text-rose-700'
-                      }`}
-                    >
-                      {isCurrent ? 'Aktif' : u.is_active ? 'Pilih Sesi' : 'Nonaktif'}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="mt-5 pt-4 border-t border-slate-100 flex justify-between items-center">
-              <button
-                onClick={() => {
-                  setShowAuthModal(false);
-                  switchTab('laporan');
-                }}
-                className="text-xs font-semibold text-blue-600 hover:underline"
-              >
-                Kelola Akun & Lihat Audit Log →
-              </button>
-              <button
-                onClick={() => setShowAuthModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
-              >
-                Tutup
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================= MODAL 2: DIAGNOSTIK KESEHATAN SERVER & EMQX (ORANG 4) ================= */}
+      {/* ================= MODAL DIAGNOSTIK KESEHATAN SERVER & EMQX (ORANG 4) ================= */}
       {showHealthModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-800">
@@ -649,7 +556,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ================= MODAL 3: TAMBAH BARANG CEPAT DARI HEADER ================= */}
+      {/* ================= MODAL TAMBAH BARANG CEPAT DARI HEADER ================= */}
       {showQuickAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
