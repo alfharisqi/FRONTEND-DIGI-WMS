@@ -35,6 +35,11 @@ export default function DashboardOverviewPage({
   const [testTopic, setTestTopic] = useState('digiwms/rfid/gate-alarm');
   const [testEpc, setTestEpc] = useState('E280689400005001A1B2C399');
 
+  // Cek apakah user aktif memiliki hak akses Admin / Supervisor (RBAC Guard)
+  const roleUpper = String(currentUser?.role || '').toUpperCase();
+  const isAdminOrSupervisor =
+    roleUpper.includes('ADMIN') || roleUpper.includes('SUPERVISOR');
+
   const fetchSummaryAndProducts = async () => {
     try {
       const [sumRes, prodRes] = await Promise.all([
@@ -98,10 +103,16 @@ export default function DashboardOverviewPage({
         body: JSON.stringify({ username }),
       });
       const json = await res.json();
-      if (res.ok && json.data) {
-        if (onUserSwitch) onUserSwitch(json.data.user);
-        showNotification?.(json.message, 'success');
+      if (res.ok && (json.data?.user || json.user)) {
+        const loggedUser = json.data?.user || json.user;
+        if (onUserSwitch) onUserSwitch(loggedUser);
+        showNotification?.(
+          json.message || `Sesi beralih ke ${loggedUser.full_name} (${loggedUser.role})`,
+          'success'
+        );
         fetchUsersAndLogs();
+      } else {
+        showNotification?.(json.message || 'Gagal mengganti sesi pengguna', 'error');
       }
     } catch (err) {
       console.error(err);
@@ -110,6 +121,13 @@ export default function DashboardOverviewPage({
 
   const handleAddUser = async (e) => {
     e.preventDefault();
+    if (!isAdminOrSupervisor) {
+      showNotification?.(
+        'Akses Ditolak (RBAC Guard): Hanya ADMIN atau SUPERVISOR yang dapat menambah personel!',
+        'error'
+      );
+      return;
+    }
     if (!newUserForm.username || !newUserForm.full_name) return;
     setSavingUser(true);
     try {
@@ -134,6 +152,13 @@ export default function DashboardOverviewPage({
   };
 
   const handleToggleUserStatus = async (userId) => {
+    if (!isAdminOrSupervisor) {
+      showNotification?.(
+        'Akses Ditolak (RBAC Guard): Hanya ADMIN/SUPERVISOR yang dapat mengubah status akun!',
+        'error'
+      );
+      return;
+    }
     try {
       const res = await fetch(`${API_BASE_URL}/users/${userId}/toggle`, {
         method: 'PATCH',
@@ -149,6 +174,13 @@ export default function DashboardOverviewPage({
 
   const handleSaveSettings = async (e) => {
     e.preventDefault();
+    if (!isAdminOrSupervisor) {
+      showNotification?.(
+        'Akses Ditolak (RBAC Guard): Role Anda tidak diizinkan mengubah konfigurasi sistem RFID!',
+        'error'
+      );
+      return;
+    }
     if (!settings) return;
     setSavingSettings(true);
     try {
@@ -157,7 +189,7 @@ export default function DashboardOverviewPage({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...settings,
-          updated_by: currentUser?.username || 'admin_wms',
+          updated_by: currentUser?.full_name || currentUser?.username || 'admin_wms',
         }),
       });
       const json = await res.json();
@@ -185,15 +217,61 @@ export default function DashboardOverviewPage({
             epc_code: testEpc,
             gate_id: 'GATE-EXIT-01',
             rssi: -46,
-            operator: currentUser?.username || 'admin_wms',
+            operator: currentUser?.full_name || 'admin_wms',
             note: 'Simulasi Pancaran Antena UHF RFID',
           },
         }),
       });
       showNotification?.(`Paket MQTT dikirim ke topik ${testTopic}`, 'info');
+      fetchUsersAndLogs();
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // Fitur Unduh File CSV Asli (Stok + Audit Logs) untuk Modul Orang 4
+  const handleDownloadCsvReport = () => {
+    const lines = [];
+    lines.push('=== LAPORAN ANALITIK INVENTARIS & AUDIT KEAMANAN DIGI WMS ===');
+    lines.push(`Tanggal Unduh,${new Date().toLocaleString('id-ID')}`);
+    lines.push(`Dicetak Oleh,${currentUser?.full_name} (${currentUser?.role})`);
+    lines.push('');
+    lines.push('--- DAFTAR STOK PRODUK GUDANG (IMMUTABLE LEDGER) ---');
+    lines.push('SKU,Nama Barang,Kategori,Stok Saat Ini,Batas Minimum,Status');
+    products.forEach((p) => {
+      const isLow = Number(p.current_stock) <= Number(p.min_stock || 15);
+      lines.push(
+        `"${p.sku}","${p.name}","${p.category}",${p.current_stock},${p.min_stock || 15},"${
+          isLow ? 'STOK RENDAH' : 'AMAN'
+        }"`
+      );
+    });
+    lines.push('');
+    lines.push('--- RIWAYAT AUDIT LOG KEAMANAN SISTEM (RBAC) ---');
+    lines.push('ID,Waktu,Pengguna,Role,Aksi,Detail Aktivitas');
+    auditLogs.forEach((log) => {
+      lines.push(
+        `${log.id},"${new Date(log.created_at).toLocaleString('id-ID')}","${
+          log.actor_username
+        }","${log.actor_role}","${log.action}","${String(log.details).replace(/"/g, '""')}"`
+      );
+    });
+
+    const csvContent = '\uFEFF' + lines.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute(
+      'download',
+      `Laporan_Analitik_Audit_DIGI_WMS_${new Date().toISOString().slice(0, 10)}.csv`
+    );
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showNotification?.('File CSV Laporan Analitik & Audit berhasil diunduh!', 'success');
   };
 
   if (loading) {
@@ -217,7 +295,9 @@ export default function DashboardOverviewPage({
     ...chartSeries.map((d) => Math.max(d.inbound || 0, d.outbound || 0, d.opname || 0))
   );
 
-  const lowStockItems = products.filter((p) => Number(p.current_stock) <= Number(p.min_stock || 20));
+  const lowStockItems = products.filter(
+    (p) => Number(p.current_stock) <= Number(p.min_stock || 20)
+  );
 
   // ============================================================================
   // MENU 1: DASHBOARD UTAMA (Persis Template Awal digiwms.html)
@@ -297,7 +377,7 @@ export default function DashboardOverviewPage({
               <div className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl text-lg">🚚</div>
             </div>
             <div className="mt-4 flex items-baseline justify-between">
-              <h3 className="text-3xl font-bold text-slate-900">320</h3>
+              <h3 className="text-3xl font-bold text-slate-900">{kpis.totalInbound || 320}</h3>
               <span className="text-xs font-semibold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">
                 Terverifikasi
               </span>
@@ -519,18 +599,25 @@ export default function DashboardOverviewPage({
               Laporan Analitik, Manajemen User (RBAC) & Audit Log
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Unduh laporan stok, pantau performa gudang, kelola hak akses pengguna, dan audit keamanan sistem.
+              Unduh laporan stok CSV/PDF, pantau performa gudang, kelola hak akses pengguna, dan audit keamanan sistem.
             </p>
           </div>
-          <button
-            onClick={() =>
-              showNotification?.('Laporan Analitik & Audit Log berhasil diunduh!', 'success')
-            }
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
-          >
-            <span>📥</span>
-            <span>Unduh Laporan PDF/Excel</span>
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleDownloadCsvReport}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
+            >
+              <span>📥</span>
+              <span>Export Laporan CSV (Excel)</span>
+            </button>
+            <button
+              onClick={() => window.print()}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
+            >
+              <span>🖨️</span>
+              <span>Cetak / Simpan PDF</span>
+            </button>
+          </div>
         </div>
 
         {/* 3 Analytic Cards from digiwms.html */}
@@ -578,7 +665,7 @@ export default function DashboardOverviewPage({
                 Sesi Aktif: {currentUser?.full_name} ({currentUser?.role})
               </h3>
               <p className="text-xs text-slate-400 mt-1">
-                Klik salah satu akun di bawah untuk berganti Role dan menguji pencatatan Audit Log otomatis:
+                Klik salah satu akun di bawah untuk berganti Role dan menguji pencatatan Audit Log serta proteksi RBAC Guard:
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -609,27 +696,38 @@ export default function DashboardOverviewPage({
                 Daftarkan operator, supervisor, atau petugas kasir POS
               </p>
             </div>
+
+            {!isAdminOrSupervisor && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                🔒 <b>Proteksi RBAC Aktif:</b> Anda sedang login sebagai{' '}
+                <b>{currentUser?.role}</b>. Hanya <b>ADMIN</b> atau <b>SUPERVISOR</b> yang dapat menambah atau menonaktifkan personel.
+              </div>
+            )}
+
             <form onSubmit={handleAddUser} className="space-y-3">
               <input
                 type="text"
                 required
+                disabled={!isAdminOrSupervisor}
                 placeholder="Username (mis: op_gudang2)"
                 value={newUserForm.username}
                 onChange={(e) => setNewUserForm({ ...newUserForm, username: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-50"
               />
               <input
                 type="text"
                 required
+                disabled={!isAdminOrSupervisor}
                 placeholder="Nama Lengkap"
                 value={newUserForm.full_name}
                 onChange={(e) => setNewUserForm({ ...newUserForm, full_name: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-50"
               />
               <select
+                disabled={!isAdminOrSupervisor}
                 value={newUserForm.role}
                 onChange={(e) => setNewUserForm({ ...newUserForm, role: e.target.value })}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm disabled:opacity-50"
               >
                 <option value="ADMIN">ADMIN (Full Access)</option>
                 <option value="SUPERVISOR">SUPERVISOR (Approval Opname)</option>
@@ -638,8 +736,8 @@ export default function DashboardOverviewPage({
               </select>
               <button
                 type="submit"
-                disabled={savingUser}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl text-sm shadow-sm transition"
+                disabled={savingUser || !isAdminOrSupervisor}
+                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 rounded-xl text-sm shadow-sm transition"
               >
                 {savingUser ? 'Menyimpan...' : '+ Tambah User'}
               </button>
@@ -739,10 +837,30 @@ export default function DashboardOverviewPage({
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h2 className="text-xl font-bold text-slate-900">Pengaturan Sistem DIGI WMS</h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Sesuaikan preferensi gudang, integrasi API, dan frekuensi RFID.
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold text-slate-900">Pengaturan Sistem DIGI WMS</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Sesuaikan preferensi gudang, integrasi API, dan frekuensi RFID.
+              </p>
+            </div>
+            <span
+              className={`text-xs font-bold px-3 py-1 rounded-full ${
+                isAdminOrSupervisor
+                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                  : 'bg-amber-50 text-amber-700 border border-amber-200'
+              }`}
+            >
+              {isAdminOrSupervisor ? '🔓 Akses Admin/Supervisor' : '🔒 Mode Baca (Read-Only)'}
+            </span>
+          </div>
+
+          {!isAdminOrSupervisor && (
+            <div className="mt-4 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+              <b>Proteksi Keamanan RBAC:</b> Sesi Anda saat ini adalah{' '}
+              <b>{currentUser?.full_name} ({currentUser?.role})</b>. Pengubahan daya antena UHF RFID dan parameter gudang dikunci khusus untuk <b>ADMIN / SUPERVISOR</b>.
+            </div>
+          )}
 
           {settings && (
             <form onSubmit={handleSaveSettings} className="mt-6 space-y-4">
@@ -752,9 +870,10 @@ export default function DashboardOverviewPage({
                 </label>
                 <input
                   type="text"
+                  disabled={!isAdminOrSupervisor}
                   value={settings.warehouse_name}
                   onChange={(e) => setSettings({ ...settings, warehouse_name: e.target.value })}
-                  className="mt-1 w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="mt-1 w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -777,11 +896,12 @@ export default function DashboardOverviewPage({
                     type="range"
                     min="15"
                     max="33"
+                    disabled={!isAdminOrSupervisor}
                     value={settings.rfid_gate_power_dbm}
                     onChange={(e) =>
                       setSettings({ ...settings, rfid_gate_power_dbm: Number(e.target.value) })
                     }
-                    className="mt-3 w-full accent-blue-600"
+                    className="mt-3 w-full accent-blue-600 disabled:opacity-50"
                   />
                 </div>
               </div>
@@ -790,11 +910,12 @@ export default function DashboardOverviewPage({
                   Mode Anti-Collision Reader
                 </label>
                 <select
+                  disabled={!isAdminOrSupervisor}
                   value={settings.anti_collision_mode}
                   onChange={(e) =>
                     setSettings({ ...settings, anti_collision_mode: e.target.value })
                   }
-                  className="mt-1 w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none"
+                  className="mt-1 w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none disabled:opacity-60"
                 >
                   <option value="Dense Reader Mode (M=4) - EPCglobal Gen2">
                     Dense Reader Mode (M=4) - EPCglobal Gen2
@@ -812,6 +933,7 @@ export default function DashboardOverviewPage({
                   <input
                     type="checkbox"
                     id="notif-toggle"
+                    disabled={!isAdminOrSupervisor}
                     checked={settings.alarm_siren_enabled}
                     onChange={(e) =>
                       setSettings({ ...settings, alarm_siren_enabled: e.target.checked })
@@ -825,8 +947,8 @@ export default function DashboardOverviewPage({
               </div>
               <button
                 type="submit"
-                disabled={savingSettings}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all"
+                disabled={savingSettings || !isAdminOrSupervisor}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-5 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all"
               >
                 {savingSettings ? 'Menyimpan...' : 'Simpan Perubahan'}
               </button>

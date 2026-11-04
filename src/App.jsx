@@ -18,8 +18,18 @@ export default function App() {
     id: 1,
     username: 'admin_wms',
     full_name: 'Sarah Jenkins',
-    role: 'Supervisor Gudang',
+    role: 'ADMIN',
   });
+
+  // Modal Login / Switch Sesi RBAC dari Sidebar
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [loginUsername, setLoginUsername] = useState('admin_wms');
+
+  // Modal Health Check Diagnostik Server & Infrastruktur (Orang 4)
+  const [showHealthModal, setShowHealthModal] = useState(false);
+  const [healthData, setHealthData] = useState(null);
+  const [loadingHealth, setLoadingHealth] = useState(false);
 
   // State Toast Notification (Persis Template Awal digiwms.html)
   const [toast, setToast] = useState({
@@ -56,6 +66,67 @@ export default function App() {
     );
     return () => sub.disconnect();
   }, []);
+
+  const openLoginModal = async () => {
+    setShowAuthModal(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/users`);
+      const json = await res.json();
+      setAvailableUsers(json.data || []);
+    } catch (err) {
+      console.error('Gagal mengambil daftar akun RBAC:', err);
+    }
+  };
+
+  const handleLoginSubmit = async (usernameToUse) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: usernameToUse || loginUsername }),
+      });
+      const json = await res.json();
+      if (res.ok && (json.data?.user || json.user)) {
+        const loggedUser = json.data?.user || json.user;
+        setCurrentUser(loggedUser);
+        setShowAuthModal(false);
+        showNotification(
+          json.message || `Berhasil login sebagai ${loggedUser.full_name} (${loggedUser.role})`,
+          'success'
+        );
+        setLastEvent({
+          topic: 'digiwms/audit/login',
+          payload: loggedUser,
+          receivedAt: new Date().toLocaleTimeString('id-ID'),
+        });
+      } else {
+        showNotification(json.message || 'Gagal login akun RBAC', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const fetchServerHealth = async () => {
+    setLoadingHealth(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/health`);
+      const json = await res.json();
+      setHealthData(json);
+    } catch {
+      setHealthData({
+        status: 'OFFLINE',
+        service: 'DIGI WMS Backend API (Tidak Terjangkau)',
+      });
+    } finally {
+      setLoadingHealth(false);
+    }
+  };
+
+  const openHealthCheckModal = () => {
+    setShowHealthModal(true);
+    fetchServerHealth();
+  };
 
   const switchTab = (tabId) => {
     setActiveTab(tabId);
@@ -290,29 +361,28 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Sidebar Footer User Profile */}
-        <div className="p-4 bg-slate-950/40 border-t border-slate-800 flex items-center space-x-3">
+        {/* Sidebar Footer User Profile (Klik untuk Ganti Sesi Login RBAC) */}
+        <div
+          onClick={openLoginModal}
+          className="p-4 bg-slate-950/60 hover:bg-slate-950 border-t border-slate-800 flex items-center space-x-3 cursor-pointer transition-all group"
+          title="Klik untuk Ganti Akun / Login Role RBAC"
+        >
           <img
             src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
             alt="User"
             className="w-10 h-10 rounded-xl object-cover border border-slate-700"
           />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{currentUser.full_name}</p>
-            <p className="text-xs text-blue-400 truncate">{currentUser.role}</p>
+            <p className="text-sm font-semibold text-white truncate group-hover:text-blue-400 transition">
+              {currentUser.full_name}
+            </p>
+            <p className="text-xs text-blue-400 truncate font-mono">
+              Role: {currentUser.role}
+            </p>
           </div>
-          <button
-            onClick={() =>
-              showNotification(
-                `Sesi ${currentUser.full_name} aktif (Role: ${currentUser.role})`,
-                'info'
-              )
-            }
-            className="text-emerald-400 hover:text-white p-1 rounded-lg"
-            title="RBAC Terverifikasi"
-          >
-            🛡️
-          </button>
+          <span className="text-xs bg-slate-800 group-hover:bg-blue-600 text-slate-300 group-hover:text-white px-2 py-1 rounded-lg font-semibold transition">
+            Ganti
+          </span>
         </div>
       </aside>
 
@@ -374,21 +444,18 @@ export default function App() {
                 )
               }
               className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+              title="Notifikasi Sistem"
             >
               <span>🔔</span>
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             </button>
             <button
-              onClick={() =>
-                showNotification(
-                  'Sistem terhubung ke server Backend DIGI WMS (Port 5000)',
-                  'success'
-                )
-              }
-              className="p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
-              title="Status Server & EMQX"
+              onClick={openHealthCheckModal}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition-all"
+              title="Klik untuk Diagnostik Kesehatan Server & EMQX"
             >
-              <span className={mqttConnected ? 'text-emerald-500' : 'text-blue-500'}>☁️</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>☁️ Status Server</span>
             </button>
           </div>
         </header>
@@ -399,7 +466,190 @@ export default function App() {
         </div>
       </main>
 
-      {/* ================= MODAL TAMBAH BARANG CEPAT DARI HEADER ================= */}
+      {/* ================= MODAL 1: LOGIN & SWITCH AKUN RBAC (ORANG 4) ================= */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full">
+                  RBAC Security Portal — Orang 4
+                </span>
+                <h3 className="font-bold text-lg text-slate-900 mt-1">
+                  Ganti Sesi Akun & Hak Akses
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 mb-4">
+              Pilih salah satu akun personel di bawah untuk menguji hak akses (RBAC Guard) dan pencatatan otomatis ke <b>System Audit Log</b>:
+            </p>
+
+            <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+              {availableUsers.map((u) => {
+                const isCurrent = currentUser.username === u.username;
+                return (
+                  <button
+                    key={u.id}
+                    disabled={!u.is_active}
+                    onClick={() => handleLoginSubmit(u.username)}
+                    className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition ${
+                      isCurrent
+                        ? 'bg-blue-50 border-blue-500'
+                        : u.is_active
+                        ? 'bg-slate-50 hover:bg-slate-100 border-slate-200'
+                        : 'bg-slate-100 border-slate-200 opacity-50 cursor-not-allowed'
+                    }`}
+                  >
+                    <div>
+                      <p className="text-sm font-bold text-slate-900">{u.full_name}</p>
+                      <span className="text-xs font-mono text-slate-500">
+                        @{u.username} • {u.role}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                        isCurrent
+                          ? 'bg-blue-600 text-white'
+                          : u.is_active
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-rose-100 text-rose-700'
+                      }`}
+                    >
+                      {isCurrent ? 'Aktif' : u.is_active ? 'Pilih Sesi' : 'Nonaktif'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-slate-100 flex justify-between items-center">
+              <button
+                onClick={() => {
+                  setShowAuthModal(false);
+                  switchTab('laporan');
+                }}
+                className="text-xs font-semibold text-blue-600 hover:underline"
+              >
+                Kelola Akun & Lihat Audit Log →
+              </button>
+              <button
+                onClick={() => setShowAuthModal(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 2: DIAGNOSTIK KESEHATAN SERVER & EMQX (ORANG 4) ================= */}
+      {showHealthModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-800">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                  Infrastructure Monitor — Orang 4
+                </span>
+                <h3 className="font-bold text-lg text-white mt-1">
+                  Status Kesehatan Server, DB & EMQX
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowHealthModal(false)}
+                className="text-slate-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingHealth || !healthData ? (
+              <div className="py-8 text-center text-slate-400 text-sm">
+                Memeriksa koneksi ke Backend API (Port 5000)...
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Status Backend API (Port 5000)</span>
+                  <span className="font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg">
+                    {healthData.status} • Uptime {healthData.uptime_seconds || 0}s
+                  </span>
+                </div>
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Engine Database & Ledger</span>
+                  <span className="font-mono font-semibold text-blue-300">
+                    {healthData.database_mode}
+                  </span>
+                </div>
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Broker EMQX MQTT (1883 / 8083)</span>
+                  <span className="font-mono font-semibold text-amber-300">
+                    {healthData.emqx_mqtt}
+                  </span>
+                </div>
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Spektrum Frekuensi UHF RFID</span>
+                  <span className="font-mono text-slate-200">{healthData.rfid_freq}</span>
+                </div>
+
+                {healthData.stats && (
+                  <div className="grid grid-cols-4 gap-2 pt-2">
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Akun RBAC</span>
+                      <span className="text-base font-bold text-white">
+                        {healthData.stats.total_users}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Master SKU</span>
+                      <span className="text-base font-bold text-blue-400">
+                        {healthData.stats.total_skus}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Tag RFID</span>
+                      <span className="text-base font-bold text-cyan-400">
+                        {healthData.stats.total_tags}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Audit Logs</span>
+                      <span className="text-base font-bold text-emerald-400">
+                        {healthData.stats.total_audit_logs}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-5 pt-4 border-t border-slate-800 flex justify-between items-center">
+              <button
+                onClick={fetchServerHealth}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold"
+              >
+                🔄 Refresh Diagnostik
+              </button>
+              <button
+                onClick={() => setShowHealthModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL 3: TAMBAH BARANG CEPAT DARI HEADER ================= */}
       {showQuickAddModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
