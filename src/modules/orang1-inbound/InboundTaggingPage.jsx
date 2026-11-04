@@ -1,270 +1,823 @@
-import React, { useState, useEffect } from 'react';
-import { Truck, Tag, Plus, Cpu, CheckCircle2 } from 'lucide-react';
-import { apiRequest } from '../../services/api';
+import React, { useEffect, useState } from 'react';
+import { API_BASE_URL } from '../../config/api';
 
-/**
- * ============================================================================
- * HALAMAN ORANG 1: PENERIMAAN BARANG (INBOUND GRN) & ENCODING TAG RFID MEJA
- * File milik Orang 1 - Bebas konflik Git dengan anggota tim lain
- * ============================================================================
- */
-export default function InboundTaggingPage({ onNotify }) {
-  const [grnList, setGrnList] = useState([
-    { id: 1, po_number: 'PO-2026-8901', supplier_name: 'PT Logitech Indonesia', receipt_date: '2026-05-12', total_qty: 150, rfid_tagging_status: 'Semua Ter-encode', status: 'SELESAI' },
-    { id: 2, po_number: 'PO-2026-8902', supplier_name: 'CV Corsair Global', receipt_date: '2026-05-12', total_qty: 85, rfid_tagging_status: 'Semua Ter-encode', status: 'SELESAI' },
-    { id: 3, po_number: 'PO-2026-8903', supplier_name: 'PT Anker Technology', receipt_date: '2026-05-11', total_qty: 85, rfid_tagging_status: 'Menunggu Tagging', status: 'MENUNGGU_VERIFIKASI' },
+export default function InboundTaggingPage({
+  activeMenu = 'penerimaan',
+  lastEvent,
+  searchQuery = '',
+  showNotification,
+}) {
+  const [products, setProducts] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [receivingList, setReceivingList] = useState([
+    {
+      po: 'PO-2026-8901',
+      supplier: 'PT Logitech Indonesia',
+      date: '12 Mei 2026',
+      qty: 150,
+      rfidStatus: 'Semua Ter-encode',
+      status: 'Selesai',
+    },
+    {
+      po: 'PO-2026-8902',
+      supplier: 'CV Corsair Global',
+      date: '12 Mei 2026',
+      qty: 85,
+      rfidStatus: 'Semua Ter-encode',
+      status: 'Selesai',
+    },
+    {
+      po: 'PO-2026-8903',
+      supplier: 'PT Anker Technology',
+      date: '11 Mei 2026',
+      qty: 85,
+      rfidStatus: 'Menunggu Tagging',
+      status: 'Menunggu Verifikasi',
+    },
   ]);
 
-  const [tagsList, setTagsList] = useState([
-    { id: 1, epc: 'E280-1160-2000-012A', sku: 'SKU-012', product_name: 'Mouse Wireless Ergonomic', type: 'STANDARD_LABEL', status: 'IN_STOCK', rack_name: 'Rak A1-01' },
-    { id: 2, epc: 'E280-1160-2000-018B', sku: 'SKU-018', product_name: 'Keyboard Mechanical RGB', type: 'ON_METAL', status: 'IN_STOCK', rack_name: 'Rak B2-01' },
-  ]);
+  // Filter states
+  const [statusFilter, setStatusFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [tagStatusFilter, setTagStatusFilter] = useState('');
+  const [localSearch, setLocalSearch] = useState('');
 
-  const [poNumber, setPoNumber] = useState('');
-  const [supplierName, setSupplierName] = useState('');
-  const [totalQty, setTotalQty] = useState(50);
-  const [selectedProductId, setSelectedProductId] = useState(1);
-  const [selectedTagType, setSelectedTagType] = useState('STANDARD_LABEL');
+  // Modal states
+  const [showGrnModal, setShowGrnModal] = useState(false);
+  const [showEncodeModal, setShowEncodeModal] = useState(false);
+  const [showSkuModal, setShowSkuModal] = useState(false);
+
+  // Forms
+  const [grnForm, setGrnForm] = useState({
+    po: `PO-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+    supplier: 'PT Razer Indonesia',
+    sku: 'SKU-MOUSE-001',
+    qty: 25,
+  });
+
+  const [encodeForm, setEncodeForm] = useState({
+    sku: 'SKU-MOUSE-001',
+    epc_code: '',
+    tagType: 'Label Biasa (UHF)',
+    status: 'ACTIVE',
+  });
+
+  const [skuForm, setSkuForm] = useState({
+    sku: '',
+    name: '',
+    category: 'Aksesoris Komputer',
+    price_idr: 350000,
+    min_stock: 20,
+  });
+
+  const fetchData = async () => {
+    try {
+      const [prodRes, tagRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/products`),
+        fetch(`${API_BASE_URL}/rfid/tags`),
+      ]);
+      const prodJson = await prodRes.json();
+      const tagJson = await tagRes.json();
+      const prodData = prodJson.data || [];
+      setProducts(prodData);
+      setTags(tagJson.data || []);
+      if (prodData.length > 0 && !grnForm.sku) {
+        setGrnForm((f) => ({ ...f, sku: prodData[0].sku }));
+        setEncodeForm((f) => ({ ...f, sku: prodData[0].sku }));
+      }
+    } catch (err) {
+      console.error('Error loading Inbound data:', err);
+    }
+  };
 
   useEffect(() => {
-    apiRequest('/api/inbound/grn')
-      .then((res) => { if (res.data) setGrnList(res.data); })
-      .catch(() => {});
-    apiRequest('/api/tags')
-      .then((res) => { if (res.data) setTagsList(res.data); })
-      .catch(() => {});
-  }, []);
+    fetchData();
+  }, [lastEvent]);
+
+  const generateRandomEpc = () => {
+    const hex = Array.from({ length: 16 }, () =>
+      Math.floor(Math.random() * 16)
+        .toString(16)
+        .toUpperCase()
+    ).join('');
+    setEncodeForm({ ...encodeForm, epc_code: `E2806894${hex}` });
+  };
 
   const handleCreateGrn = async (e) => {
     e.preventDefault();
     try {
-      const res = await apiRequest('/api/inbound/grn', {
+      const res = await fetch(`${API_BASE_URL}/inbound/grn`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          po_number: poNumber,
-          supplier_name: supplierName,
-          total_qty: Number(totalQty),
+          sku: grnForm.sku,
+          qty: Number(grnForm.qty),
+          supplier_name: grnForm.supplier,
+          po_number: grnForm.po,
         }),
       });
-      setGrnList([res.data, ...grnList]);
-      onNotify(`Dokumen GRN ${poNumber} berhasil disimpan ke PostgreSQL!`);
-    } catch {
-      const fallback = {
-        id: Date.now(),
-        po_number: poNumber,
-        supplier_name: supplierName,
-        receipt_date: new Date().toISOString().slice(0, 10),
-        total_qty: Number(totalQty),
-        rfid_tagging_status: 'Auto-Encoded',
-        status: 'SELESAI',
-      };
-      setGrnList([fallback, ...grnList]);
-      onNotify(`Dokumen GRN ${poNumber} dicatat (Mode Simulasi Lokal)`);
+      const json = await res.json();
+      if (res.ok) {
+        setReceivingList([
+          {
+            po: grnForm.po,
+            supplier: grnForm.supplier,
+            date: new Date().toLocaleDateString('id-ID', {
+              day: '2-digit',
+              month: 'short',
+              year: 'numeric',
+            }),
+            qty: Number(grnForm.qty),
+            rfidStatus: 'Semua Ter-encode',
+            status: 'Selesai',
+          },
+          ...receivingList,
+        ]);
+        showNotification?.(json.message || 'Penerimaan GRN berhasil dicatat ke Ledger!', 'success');
+        setShowGrnModal(false);
+        fetchData();
+      }
+    } catch (err) {
+      console.error(err);
     }
-    setPoNumber('');
-    setSupplierName('');
   };
 
   const handleEncodeTag = async (e) => {
     e.preventDefault();
+    const epcToUse =
+      encodeForm.epc_code ||
+      `E2806894${Array.from({ length: 16 }, () =>
+        Math.floor(Math.random() * 16)
+          .toString(16)
+          .toUpperCase()
+      ).join('')}`;
     try {
-      const res = await apiRequest('/api/tags/encode', {
+      const res = await fetch(`${API_BASE_URL}/rfid/encode`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          product_id: Number(selectedProductId),
-          type: selectedTagType,
+          epc_code: epcToUse,
+          sku: encodeForm.sku,
+          location_code: 'LOC-STAGE-01',
         }),
       });
-      setTagsList([
-        {
-          ...res.tag,
-          sku: `SKU-0${selectedProductId}`,
-          product_name: 'Produk Ter-encode Baru',
-          rack_name: 'Meja Tagging Inbound',
-        },
-        ...tagsList,
-      ]);
-      onNotify(`Chip EPC ${res.tag.epc} berhasil di-encode & dipublish ke EMQX!`);
-    } catch {
-      const mockEpc = `E280-1160-2000-${Math.floor(1000 + Math.random() * 9000)}`;
-      setTagsList([
-        {
-          id: Date.now(),
-          epc: mockEpc,
-          sku: `SKU-0${selectedProductId}`,
-          product_name: 'Barang Inbound Baru',
-          type: selectedTagType,
-          status: 'ENCODED',
-          rack_name: 'Meja Tagging',
-        },
-        ...tagsList,
-      ]);
-      onNotify(`Chip EPC ${mockEpc} berhasil di-encode!`);
+      const json = await res.json();
+      if (res.ok) {
+        showNotification?.(`Tag ${epcToUse} berhasil di-encode!`, 'success');
+        setShowEncodeModal(false);
+        setEncodeForm({ ...encodeForm, epc_code: '' });
+        fetchData();
+      } else {
+        showNotification?.(json.message || 'Gagal encode tag', 'error');
+      }
+    } catch (err) {
+      console.error(err);
     }
   };
 
-  return (
-    <div className="space-y-6">
-      {/* Banner Modul Orang 1 */}
-      <div className="bg-blue-700 text-white p-5 rounded-2xl shadow-md flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <span className="text-xs font-bold uppercase tracking-wider bg-blue-900/60 px-3 py-1 rounded-full">
-            Area Kerja Orang 1
-          </span>
-          <h2 className="text-xl font-bold mt-2">Penerimaan Barang (Inbound GRN) &amp; Meja Tagging RFID</h2>
-          <p className="text-xs text-blue-100 mt-0.5">
-            Verifikasi surat jalan supplier, pembuatan dokumen GRN, dan penulisan kode EPC 96-bit pada chip RFID.
-          </p>
-        </div>
-      </div>
+  const handleAddSku = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch(`${API_BASE_URL}/products`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(skuForm),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showNotification?.(json.message || 'SKU Barang berhasil ditambahkan', 'success');
+        setShowSkuModal(false);
+        setSkuForm({
+          sku: '',
+          name: '',
+          category: 'Aksesoris Komputer',
+          price_idr: 350000,
+          min_stock: 20,
+        });
+        fetchData();
+      } else {
+        showNotification?.(json.message || 'Gagal menambah SKU', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
-      {/* Grid Form: Catat GRN & Encode Tag RFID */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Form 1: Catat GRN */}
-        <form onSubmit={handleCreateGrn} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex items-center space-x-2">
-            <Truck className="w-5 h-5 text-blue-600" />
-            <h3 className="font-bold text-slate-900">1. Catat Penerimaan Baru (GRN)</h3>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">No. PO / Surat Jalan</label>
-              <input
-                type="text"
-                required
-                value={poNumber}
-                onChange={(e) => setPoNumber(e.target.value)}
-                placeholder="PO-2026-8905"
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Jumlah Unit Masuk</label>
-              <input
-                type="number"
-                required
-                min="1"
-                value={totalQty}
-                onChange={(e) => setTotalQty(e.target.value)}
-                className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-              />
-            </div>
-          </div>
+  const combinedSearch = (localSearch || searchQuery).toLowerCase();
+
+  // ============================================================================
+  // MENU 1: PENERIMAAN (RECEIVING / INBOUND)
+  // ============================================================================
+  if (activeMenu === 'penerimaan') {
+    const filteredReceiving = receivingList.filter((item) => {
+      const matchSearch =
+        item.po.toLowerCase().includes(combinedSearch) ||
+        item.supplier.toLowerCase().includes(combinedSearch);
+      const matchStatus = !statusFilter || item.status === statusFilter;
+      return matchSearch && matchStatus;
+    });
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Nama Supplier / Vendor</label>
+            <h2 className="text-xl font-bold text-slate-900">
+              Manajemen Penerimaan Barang (Inbound & GRN)
+            </h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Catat surat jalan masuk dari supplier, verifikasi fisik, dan siapkan encoding tag RFID.
+            </p>
+          </div>
+          <button
+            onClick={() => setShowGrnModal(true)}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md shadow-blue-600/20 transition-all flex items-center space-x-2"
+          >
+            <span>➕</span>
+            <span>Catat Penerimaan Baru</span>
+          </button>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
             <input
               type="text"
-              required
-              value={supplierName}
-              onChange={(e) => setSupplierName(e.target.value)}
-              placeholder="PT Razer Teknologi Indonesia"
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder="Cari nomor PO atau supplier..."
+              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-72 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
+            <div className="flex items-center space-x-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none"
+              >
+                <option value="">Semua Status</option>
+                <option value="Selesai">Selesai</option>
+                <option value="Menunggu Verifikasi">Menunggu Verifikasi</option>
+              </select>
+            </div>
           </div>
-          <button
-            type="submit"
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Simpan Dokumen GRN</span>
-          </button>
-        </form>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                  <th className="p-4">No. PO / Ref</th>
+                  <th className="p-4">Supplier</th>
+                  <th className="p-4">Tanggal Masuk</th>
+                  <th className="p-4">Jumlah Item</th>
+                  <th className="p-4">Status RFID</th>
+                  <th className="p-4">Status Penerimaan</th>
+                  <th className="p-4 text-right">Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {filteredReceiving.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50">
+                    <td className="p-4 font-bold text-blue-600 font-mono">{row.po}</td>
+                    <td className="p-4 font-medium">{row.supplier}</td>
+                    <td className="p-4 text-slate-500">{row.date}</td>
+                    <td className="p-4 font-semibold">{row.qty} Unit</td>
+                    <td className="p-4">
+                      <span className="bg-cyan-50 text-cyan-700 text-xs px-2.5 py-1 rounded-lg font-semibold">
+                        {row.rfidStatus}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
+                          row.status === 'Selesai'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : 'bg-amber-50 text-amber-700'
+                        }`}
+                      >
+                        {row.status}
+                      </span>
+                    </td>
+                    <td className="p-4 text-right">
+                      <button
+                        onClick={() =>
+                          showNotification?.(`Detail Surat Jalan ${row.po} terverifikasi`, 'info')
+                        }
+                        className="text-xs font-semibold text-blue-600 hover:underline"
+                      >
+                        Detail GRN
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-        {/* Form 2: Desktop RFID Tag Encoder */}
-        <form onSubmit={handleEncodeTag} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        {/* Modal Catat Penerimaan Baru */}
+        {showGrnModal && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-900">
+                  Catat Penerimaan Baru (Inbound GRN)
+                </h3>
+                <button
+                  onClick={() => setShowGrnModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={handleCreateGrn} className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      No. PO / Ref
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={grnForm.po}
+                      onChange={(e) => setGrnForm({ ...grnForm, po: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      Pilih SKU Produk
+                    </label>
+                    <select
+                      value={grnForm.sku}
+                      onChange={(e) => setGrnForm({ ...grnForm, sku: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                    >
+                      {products.map((p) => (
+                        <option key={p.sku} value={p.sku}>
+                          {p.sku} — {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Supplier / Vendor
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={grnForm.supplier}
+                    onChange={(e) => setGrnForm({ ...grnForm, supplier: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Total Unit Masuk (+ Ledger)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={grnForm.qty}
+                    onChange={(e) => setGrnForm({ ...grnForm, qty: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowGrnModal(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium shadow-md"
+                  >
+                    Simpan Penerimaan
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // MENU 2: STOK BARANG (INVENTORY)
+  // ============================================================================
+  if (activeMenu === 'stok') {
+    const filteredProducts = products.filter((p) => {
+      const matchSearch =
+        p.name?.toLowerCase().includes(combinedSearch) ||
+        p.sku?.toLowerCase().includes(combinedSearch);
+      const matchCat = !categoryFilter || p.category === categoryFilter;
+      return matchSearch && matchCat;
+    });
+
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Inventaris Stok Barang Gudang</h2>
+            <p className="text-xs text-slate-500 mt-1">
+              Daftar lengkap seluruh barang tersimpan beserta lokasi rak dan penanda RFID.
+            </p>
+          </div>
+          <div className="flex space-x-3">
+            <button
+              onClick={() => setShowEncodeModal(true)}
+              className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
+            >
+              <span>🏷️</span>
+              <span>Encode Tag Baru</span>
+            </button>
+            <button
+              onClick={() => setShowSkuModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md shadow-blue-600/20 transition-all flex items-center space-x-2"
+            >
+              <span>➕</span>
+              <span>Tambah SKU Barang</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
+            <input
+              type="text"
+              value={localSearch}
+              onChange={(e) => setLocalSearch(e.target.value)}
+              placeholder="Cari nama barang atau SKU..."
+              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="flex items-center space-x-3">
+              <select
+                value={categoryFilter}
+                onChange={(e) => setCategoryFilter(e.target.value)}
+                className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none"
+              >
+                <option value="">Semua Kategori</option>
+                <option value="Elektronik">Elektronik</option>
+                <option value="Aksesoris">Aksesoris</option>
+                <option value="Aksesoris Komputer">Aksesoris Komputer</option>
+                <option value="Periferal Gaming">Periferal Gaming</option>
+              </select>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                  <th className="p-4">SKU / Kode</th>
+                  <th className="p-4">Nama Barang</th>
+                  <th className="p-4">Kategori</th>
+                  <th className="p-4">Lokasi Rak</th>
+                  <th className="p-4">Jumlah Stok</th>
+                  <th className="p-4">Status Stok</th>
+                  <th className="p-4 text-right">Harga Satuan</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 text-slate-700">
+                {filteredProducts.map((p) => {
+                  const isLow = Number(p.current_stock) <= Number(p.min_stock || 15);
+                  return (
+                    <tr key={p.id || p.sku} className="hover:bg-slate-50">
+                      <td className="p-4 font-mono font-bold text-blue-600">{p.sku}</td>
+                      <td className="p-4 font-semibold text-slate-900">{p.name}</td>
+                      <td className="p-4 text-slate-500">{p.category}</td>
+                      <td className="p-4">
+                        <span className="bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-lg font-medium">
+                          Rak A1-01
+                        </span>
+                      </td>
+                      <td className="p-4 font-extrabold text-base">{p.current_stock} Unit</td>
+                      <td className="p-4">
+                        <span
+                          className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
+                            isLow
+                              ? 'bg-rose-50 text-rose-600 border border-rose-200'
+                              : 'bg-emerald-50 text-emerald-700'
+                          }`}
+                        >
+                          {isLow ? 'Stok Rendah' : 'Aman'}
+                        </span>
+                      </td>
+                      <td className="p-4 text-right font-mono text-slate-600">
+                        Rp {Number(p.price_idr || 0).toLocaleString('id-ID')}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Modal Tambah SKU */}
+        {showSkuModal && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-900">Tambah Barang / SKU Baru</h3>
+                <button
+                  onClick={() => setShowSkuModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={handleAddSku} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Nama Barang
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Contoh: Headset Gaming Wireless"
+                    value={skuForm.name}
+                    onChange={(e) => setSkuForm({ ...skuForm, name: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      SKU / Kode Barang
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="SKU-HEAD-009"
+                      value={skuForm.sku}
+                      onChange={(e) => setSkuForm({ ...skuForm, sku: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      Kategori
+                    </label>
+                    <select
+                      value={skuForm.category}
+                      onChange={(e) => setSkuForm({ ...skuForm, category: e.target.value })}
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                    >
+                      <option value="Elektronik">Elektronik</option>
+                      <option value="Aksesoris">Aksesoris</option>
+                      <option value="Aksesoris Komputer">Aksesoris Komputer</option>
+                      <option value="Periferal Gaming">Periferal Gaming</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      Harga Satuan (Rp)
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      value={skuForm.price_idr}
+                      onChange={(e) =>
+                        setSkuForm({ ...skuForm, price_idr: Number(e.target.value) })
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                      Stok Minimum Alert
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      value={skuForm.min_stock}
+                      onChange={(e) =>
+                        setSkuForm({ ...skuForm, min_stock: Number(e.target.value) })
+                      }
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowSkuModal(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium shadow-md"
+                  >
+                    Simpan Barang
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Encode Tag */}
+        {showEncodeModal && (
+          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="font-bold text-lg text-slate-900">Encode Tag RFID Baru</h3>
+                <button
+                  onClick={() => setShowEncodeModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold"
+                >
+                  ✕
+                </button>
+              </div>
+              <form onSubmit={handleEncodeTag} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Pilih Barang / SKU
+                  </label>
+                  <select
+                    value={encodeForm.sku}
+                    onChange={(e) => setEncodeForm({ ...encodeForm, sku: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  >
+                    {products.map((p) => (
+                      <option key={p.sku} value={p.sku}>
+                        {p.sku} — {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    EPC 96-Bit Hex Code
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Otomatis jika dikosongkan"
+                      value={encodeForm.epc_code}
+                      onChange={(e) =>
+                        setEncodeForm({ ...encodeForm, epc_code: e.target.value })
+                      }
+                      className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+                    />
+                    <button
+                      type="button"
+                      onClick={generateRandomEpc}
+                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold"
+                    >
+                      Generate
+                    </button>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowEncodeModal(false)}
+                    className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-cyan-600 text-white hover:bg-cyan-700 rounded-xl text-sm font-medium shadow-md"
+                  >
+                    Tulis ke Chip RFID
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ============================================================================
+  // MENU 3: RFID TAG & ENCODING (CORE)
+  // ============================================================================
+  const filteredTags = tags.filter((t) => {
+    const matchSearch =
+      t.epc_code?.toLowerCase().includes(combinedSearch) ||
+      t.sku?.toLowerCase().includes(combinedSearch) ||
+      t.product_name?.toLowerCase().includes(combinedSearch);
+    const matchStatus = !tagStatusFilter || t.status === tagStatusFilter;
+    return matchSearch && matchStatus;
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div>
           <div className="flex items-center space-x-2">
-            <Cpu className="w-5 h-5 text-cyan-600" />
-            <h3 className="font-bold text-slate-900">2. Encode Tag RFID Baru (Desktop Reader)</h3>
+            <h2 className="text-xl font-bold text-slate-900">
+              Manajemen Tag RFID UHF & Encoding
+            </h2>
+            <span className="bg-cyan-50 text-cyan-700 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-cyan-200">
+              920–923 MHz
+            </span>
           </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Pilih Produk / SKU</label>
-            <select
-              value={selectedProductId}
-              onChange={(e) => setSelectedProductId(e.target.value)}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-            >
-              <option value={1}>SKU-012 — Mouse Wireless Ergonomic</option>
-              <option value={2}>SKU-018 — Keyboard Mechanical RGB</option>
-              <option value={3}>SKU-024 — Kabel HDMI 2.0 4K Ultra</option>
-              <option value={4}>SKU-031 — USB Hub Type-C 7in1 Multi</option>
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1">Jenis Tag UHF (920–923 MHz)</label>
-            <select
-              value={selectedTagType}
-              onChange={(e) => setSelectedTagType(e.target.value)}
-              className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm"
-            >
-              <option value="STANDARD_LABEL">Label UHF Biasa (Kardus/Plastik)</option>
-              <option value="ON_METAL">Tag On-Metal (Barang Logam/Cairan)</option>
-              <option value="HARD_TAG">Hard Tag ABS (Aset Perusahaan)</option>
-            </select>
-          </div>
-          <button
-            type="submit"
-            className="w-full bg-cyan-600 hover:bg-cyan-700 text-white py-2.5 rounded-xl text-sm font-semibold flex items-center justify-center space-x-2"
+          <p className="text-xs text-slate-500 mt-1">
+            Daftar chip EPC terdaftar, tipe tag (Label/On-Metal/Hard Tag), dan status siklus hidup tag.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowEncodeModal(true)}
+          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md shadow-cyan-600/20 transition-all flex items-center space-x-2"
+        >
+          <span>🏷️</span>
+          <span>Encode Tag Baru (Desktop Reader)</span>
+        </button>
+      </div>
+
+      {/* Siklus Status Info (Persis Template Awal digiwms.html) */}
+      <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-sm flex flex-col md:flex-row items-center justify-between text-xs gap-3">
+        <span className="font-bold text-slate-300 uppercase tracking-wider">
+          Siklus Hidup Tag:
+        </span>
+        <div className="flex items-center flex-wrap gap-2">
+          <span className="bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg">
+            1. Belum Dipakai
+          </span>
+          <span className="text-slate-600">→</span>
+          <span className="bg-blue-900/60 text-blue-300 px-2.5 py-1 rounded-lg">
+            2. Ter-encode
+          </span>
+          <span className="text-slate-600">→</span>
+          <span className="bg-emerald-900/60 text-emerald-300 px-2.5 py-1 rounded-lg">
+            3. In Stock
+          </span>
+          <span className="text-slate-600">→</span>
+          <span className="bg-amber-900/60 text-amber-300 px-2.5 py-1 rounded-lg">
+            4. Reserved
+          </span>
+          <span className="text-slate-600">→</span>
+          <span className="bg-indigo-900/60 text-indigo-300 px-2.5 py-1 rounded-lg font-bold">
+            5. Authorized Out
+          </span>
+          <span className="text-slate-600">→</span>
+          <span className="bg-slate-700 text-slate-400 px-2.5 py-1 rounded-lg">
+            6. Keluar / Terjual
+          </span>
+        </div>
+      </div>
+
+      {/* RFID Tags Table */}
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
+          <input
+            type="text"
+            value={localSearch}
+            onChange={(e) => setLocalSearch(e.target.value)}
+            placeholder="Cari EPC atau Nama Barang..."
+            className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <select
+            value={tagStatusFilter}
+            onChange={(e) => setTagStatusFilter(e.target.value)}
+            className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none"
           >
-            <Tag className="w-4 h-4" />
-            <span>Tulis EPC ke Chip RFID (Status: ENCODED)</span>
-          </button>
-        </form>
-      </div>
-
-      {/* Tabel Daftar GRN & Tag Ter-encode */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200 font-bold text-sm text-slate-800">
-            Riwayat Dokumen Penerimaan (GRN)
-          </div>
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="p-3">No. PO</th>
-                <th className="p-3">Supplier</th>
-                <th className="p-3">Qty</th>
-                <th className="p-3">Status</th>
+            <option value="">Semua Status Tag</option>
+            <option value="ACTIVE">In Stock (ACTIVE)</option>
+            <option value="SOLD">Authorized Out / SOLD</option>
+          </select>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                <th className="p-4">EPC Tag (Hex Code)</th>
+                <th className="p-4">Barang / SKU</th>
+                <th className="p-4">Tipe Tag</th>
+                <th className="p-4">Lokasi Rak</th>
+                <th className="p-4">Kekuatan RSSI</th>
+                <th className="p-4">Status Otorisasi</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100">
-              {grnList.map((g, idx) => (
-                <tr key={idx}>
-                  <td className="p-3 font-bold text-slate-900">{g.po_number}</td>
-                  <td className="p-3">{g.supplier_name}</td>
-                  <td className="p-3 font-semibold">{g.total_qty} Unit</td>
-                  <td className="p-3">
-                    <span className="bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full font-semibold">
-                      {g.status}
+            <tbody className="divide-y divide-slate-100 text-slate-700">
+              {filteredTags.map((t) => (
+                <tr key={t.epc_code} className="hover:bg-slate-50">
+                  <td className="p-4 font-mono font-bold text-cyan-700">{t.epc_code}</td>
+                  <td className="p-4">
+                    <p className="font-semibold text-slate-900">{t.product_name || t.sku}</p>
+                    <span className="text-xs text-slate-400 font-mono">{t.sku}</span>
+                  </td>
+                  <td className="p-4 text-xs text-slate-600">Label UHF Gen2</td>
+                  <td className="p-4">
+                    <span className="bg-slate-100 text-slate-700 text-xs px-2.5 py-1 rounded-lg font-mono">
+                      {t.location_code}
                     </span>
                   </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200 font-bold text-sm text-slate-800">
-            Daftar Chip EPC RFID Terdaftar
-          </div>
-          <table className="w-full text-left text-xs">
-            <thead className="bg-slate-50 text-slate-600 border-b border-slate-200">
-              <tr>
-                <th className="p-3">Kode EPC</th>
-                <th className="p-3">Tipe Tag</th>
-                <th className="p-3">Lokasi</th>
-                <th className="p-3">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {tagsList.map((t, idx) => (
-                <tr key={idx}>
-                  <td className="p-3 font-mono font-bold text-slate-900">{t.epc}</td>
-                  <td className="p-3">{t.type}</td>
-                  <td className="p-3 text-blue-600 font-medium">{t.rack_name || 'Staging'}</td>
-                  <td className="p-3">
-                    <span className="bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full font-semibold">
-                      {t.status}
+                  <td className="p-4 font-mono text-xs text-emerald-600">-54 dBm</td>
+                  <td className="p-4">
+                    <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-1 rounded-lg font-semibold">
+                      {t.status === 'ACTIVE' ? 'In Stock' : t.status}
                     </span>
                   </td>
                 </tr>
@@ -273,6 +826,84 @@ export default function InboundTaggingPage({ onNotify }) {
           </table>
         </div>
       </div>
+
+      {/* Modal Encode Tag */}
+      {showEncodeModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-bold text-lg text-slate-900">Encode Tag RFID Baru</h3>
+              <button
+                onClick={() => setShowEncodeModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleEncodeTag} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  Pilih Barang / SKU
+                </label>
+                <select
+                  value={encodeForm.sku}
+                  onChange={(e) => setEncodeForm({ ...encodeForm, sku: e.target.value })}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                >
+                  {products.map((p) => (
+                    <option key={p.sku} value={p.sku}>
+                      {p.sku} — {p.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  Kode EPC 96-Bit (Hex)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Kosongkan untuk Auto-Generate"
+                    value={encodeForm.epc_code}
+                    onChange={(e) =>
+                      setEncodeForm({ ...encodeForm, epc_code: e.target.value })
+                    }
+                    className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={generateRandomEpc}
+                    className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold"
+                  >
+                    Generate
+                  </button>
+                </div>
+              </div>
+              <div className="p-3 bg-cyan-50 rounded-xl border border-cyan-200">
+                <p className="text-xs text-cyan-800">
+                  Sistem akan men-generate EPC 96-bit berstandar Gen2 yang unik di rentang frekuensi 920–923 MHz dan mempublikasikannya ke EMQX MQTT.
+                </p>
+              </div>
+              <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowEncodeModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-cyan-600 text-white hover:bg-cyan-700 rounded-xl text-sm font-medium shadow-md"
+                >
+                  Tulis ke Chip RFID
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
