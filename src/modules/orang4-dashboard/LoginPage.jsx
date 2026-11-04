@@ -35,12 +35,6 @@ export default function LoginPage({ onLoginSuccess }) {
     }
   };
 
-  const fillCredential = (uname) => {
-    setUsername(uname);
-    setPassword('123456');
-    setErrorMsg('');
-  };
-
   return (
     <div className="min-h-screen w-full bg-slate-950 flex flex-col lg:flex-row font-sans text-slate-800">
       {/* Panel Kiri: Branding & Informasi Infrastruktur RFID */}
@@ -171,58 +165,6 @@ export default function LoginPage({ onLoginSuccess }) {
               {loading ? 'Memverifikasi Kredensial...' : 'Masuk ke Sistem DIGI WMS →'}
             </button>
           </form>
-
-          {/* Daftar Kredensial Default untuk Pengujian Cepat */}
-          <div className="mt-7 pt-5 border-t border-slate-100">
-            <div className="flex items-center justify-between mb-2.5">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Akun Terdaftar (Klik untuk Isi Cepat)
-              </span>
-              <span className="text-[11px] font-mono text-slate-400">Pass: 123456</span>
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => fillCredential('admin.wms')}
-                className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition"
-              >
-                <p className="text-xs font-bold text-slate-800">Budi Santoso</p>
-                <span className="text-[10px] font-mono text-blue-600">
-                  @admin.wms • ADMIN
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredential('sarah.jenkins')}
-                className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition"
-              >
-                <p className="text-xs font-bold text-slate-800">Sarah Jenkins</p>
-                <span className="text-[10px] font-mono text-emerald-600">
-                  @sarah.jenkins • SUPERVISOR
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredential('operator.inbound')}
-                className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition"
-              >
-                <p className="text-xs font-bold text-slate-800">Andi Pratama</p>
-                <span className="text-[10px] font-mono text-amber-600">
-                  @operator.inbound • STAFF
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => fillCredential('security.gate')}
-                className="p-2.5 bg-slate-50 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 rounded-xl text-left transition"
-              >
-                <p className="text-xs font-bold text-slate-800">Komandan Hendra</p>
-                <span className="text-[10px] font-mono text-rose-600">
-                  @security.gate • SECURITY
-                </span>
-              </button>
-            </div>
-          </div>
         </div>
       </div>
     </div>
