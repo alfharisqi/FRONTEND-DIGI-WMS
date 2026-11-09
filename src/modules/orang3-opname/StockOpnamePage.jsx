@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { API_BASE_URL } from '../../config/api';
+import { apiRequest } from '../../services/api';
 
 export default function StockOpnamePage({
   activeMenu = 'rfid-opname',
@@ -38,17 +38,19 @@ export default function StockOpnamePage({
 
   const audioCtxRef = useRef(null);
 
-  const fetchProducts = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/products`);
-      const json = await res.json();
-      const prods = json.data || [];
-      setProducts(prods);
-      buildDiscrepancyTable(prods);
-    } catch (err) {
-      console.error('Error loading Opname products:', err);
-    }
-  };
+  
+const fetchProducts = async () => {
+  try {
+    const json = await apiRequest('/api/products');
+    const prods = json.data || [];
+    setProducts(prods);
+    buildDiscrepancyTable(prods);
+  } catch (err) {
+    console.error('Error loading Opname products:', err);
+    showNotification?.(err.message, 'error');
+  }
+};
+
 
   const buildDiscrepancyTable = (prods) => {
     const rows = prods.map((p, idx) => {
@@ -103,20 +105,42 @@ export default function StockOpnamePage({
     }
   };
 
-  const runHandheldOpnameSimulation = () => {
+  
+const runHandheldOpnameSimulation = async () => {
+  try {
+    // Membuat sesi Stock Opname di backend
+    const session = await apiRequest('/api/stocktake/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        zone_code: selectedZone,
+        scanner_device: 'Chainway C72',
+      }),
+    });
+
+    console.log('Sesi Stock Opname berhasil dibuat:', session);
+
+    // Menjalankan simulasi tampilan pemindaian
     setScanning(true);
     setScanProgress(0);
     setScannedCount(0);
+
     let step = 0;
+
     const interval = setInterval(() => {
       step += 25;
       setScanProgress(step);
-      setScannedCount((prev) => prev + Math.floor(12 + Math.random() * 15));
+
+      setScannedCount(
+        (prev) => prev + Math.floor(12 + Math.random() * 15)
+      );
+
       if (step >= 100) {
         clearInterval(interval);
+
         setTimeout(() => {
           setScanning(false);
           fetchProducts();
+
           showNotification?.(
             `Pemindaian Handheld RFID Zona ${selectedZone} selesai!`,
             'success'
@@ -124,7 +148,16 @@ export default function StockOpnamePage({
         }, 400);
       }
     }, 300);
-  };
+
+  } catch (err) {
+    console.error('Gagal membuat sesi Stock Opname:', err);
+
+    showNotification?.(
+      err.message || 'Gagal membuat sesi Stock Opname',
+      'error'
+    );
+  }
+};
 
   const handleApproveAdjustment = async () => {
     const mismatch = discrepancyRows.find((r) => r.diff !== 0 && !r.approved);
