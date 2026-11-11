@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createMqttSubscription } from './config/mqttClient';
 import { API_BASE_URL } from './config/api';
 import DashboardOverviewPage from './modules/orang4-dashboard/DashboardOverviewPage';
+import LoginPage from './modules/orang4-dashboard/LoginPage';
 import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
@@ -13,13 +14,25 @@ export default function App() {
   const [lastEvent, setLastEvent] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
 
-  // State User Aktif (RBAC Auth — dikelola oleh Orang 4)
-  const [currentUser, setCurrentUser] = useState({
-    id: 1,
-    username: 'admin_wms',
-    full_name: 'Sarah Jenkins',
-    role: 'Supervisor Gudang',
+  // State User Aktif (RBAC Auth — dikelola oleh Orang 4 via Halaman Login Resmi)
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem('digiwms_user');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
+
+  // Guard Hak Akses RBAC: Khusus ADMIN & SUPERVISOR
+  const roleUpper = String(currentUser?.role || '').toUpperCase();
+  const isAdminOrSupervisor =
+    roleUpper.includes('ADMIN') || roleUpper.includes('SUPERVISOR');
+
+  // Modal Health Check Diagnostik Server & Infrastruktur (Orang 4)
+  const [showHealthModal, setShowHealthModal] = useState(false);
+  const [healthData, setHealthData] = useState(null);
+  const [loadingHealth, setLoadingHealth] = useState(false);
 
   // State Toast Notification (Persis Template Awal digiwms.html)
   const [toast, setToast] = useState({
@@ -57,7 +70,58 @@ export default function App() {
     return () => sub.disconnect();
   }, []);
 
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: currentUser?.username,
+          full_name: currentUser?.full_name,
+          role: currentUser?.role,
+        }),
+      });
+    } catch {
+      // Abaikan jika offline
+    }
+    localStorage.removeItem('digiwms_user');
+    localStorage.removeItem('digiwms_token');
+    setCurrentUser(null);
+  };
+
+  const fetchServerHealth = async () => {
+    setLoadingHealth(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/health`);
+      const json = await res.json();
+      setHealthData(json);
+    } catch {
+      setHealthData({
+        status: 'OFFLINE',
+        service: 'DIGI WMS Backend API (Tidak Terjangkau)',
+      });
+    } finally {
+      setLoadingHealth(false);
+    }
+  };
+
+  const openHealthCheckModal = () => {
+    setShowHealthModal(true);
+    fetchServerHealth();
+  };
+
+  // Proteksi otomatis: jika tab aktif adalah 'users' tapi user bukan Admin/Supervisor, kembalikan ke dashboard
+  useEffect(() => {
+    if (activeTab === 'users' && !isAdminOrSupervisor) {
+      setActiveTab('dashboard');
+    }
+  }, [currentUser, activeTab, isAdminOrSupervisor]);
+
   const switchTab = (tabId) => {
+    if (tabId === 'users' && !isAdminOrSupervisor) {
+      showNotification('Akses Terbatas: Menu Manajemen User hanya untuk Admin / Supervisor', 'error');
+      return;
+    }
     setActiveTab(tabId);
     setSidebarOpen(false);
   };
@@ -101,6 +165,21 @@ export default function App() {
     }
   };
 
+  // Jika belum login, tampilkan Halaman Login Resmi (Orang 4)
+  if (!currentUser) {
+    return (
+      <LoginPage
+        onLoginSuccess={(loggedUser) => {
+          setCurrentUser(loggedUser);
+          showNotification(
+            `Selamat datang, ${loggedUser.full_name} (${loggedUser.role})`,
+            'success'
+          );
+        }}
+      />
+    );
+  }
+
   const navClass = (tabId) =>
     `nav-item flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left ${
       activeTab === tabId
@@ -110,8 +189,8 @@ export default function App() {
 
   // Pemetaan Menu Template Awal digiwms.html -> 4 Modul Tim (Tanpa Konflik Git)
   const renderMainContent = () => {
-    // 1. Modul Orang 4 (Dashboard, Laporan Analitik/RBAC/Audit, Pengaturan, Flyer)
-    if (['dashboard', 'laporan', 'pengaturan', 'flyer'].includes(activeTab)) {
+    // 1. Modul Orang 4 (Dashboard, Manajemen User RBAC, Laporan Analitik, Pengaturan, Flyer)
+    if (['dashboard', 'users', 'laporan', 'pengaturan', 'flyer'].includes(activeTab)) {
       return (
         <DashboardOverviewPage
           activeMenu={activeTab}
@@ -120,7 +199,6 @@ export default function App() {
           lastEvent={lastEvent}
           mqttConnected={mqttConnected}
           currentUser={currentUser}
-          onUserSwitch={setCurrentUser}
           showNotification={showNotification}
         />
       );
@@ -272,13 +350,19 @@ export default function App() {
             <span>Ledger Pergerakan</span>
           </button>
 
-          {/* Sistem & Analitik */}
+          {/* Sistem & Analitik (Modul Orang 4) */}
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mt-5 mb-1 pt-3">
             Sistem & Analitik
           </p>
+          {isAdminOrSupervisor && (
+            <button onClick={() => switchTab('users')} className={navClass('users')}>
+              <span>👥</span>
+              <span>Manajemen User (RBAC)</span>
+            </button>
+          )}
           <button onClick={() => switchTab('laporan')} className={navClass('laporan')}>
             <span>📈</span>
-            <span>Laporan & RBAC Audit</span>
+            <span>Laporan & Analitik</span>
           </button>
           <button onClick={() => switchTab('pengaturan')} className={navClass('pengaturan')}>
             <span>⚙️</span>
@@ -290,8 +374,8 @@ export default function App() {
           </button>
         </nav>
 
-        {/* Sidebar Footer User Profile */}
-        <div className="p-4 bg-slate-950/40 border-t border-slate-800 flex items-center space-x-3">
+        {/* Sidebar Footer User Profile + Tombol Logout */}
+        <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex items-center space-x-3">
           <img
             src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
             alt="User"
@@ -299,19 +383,14 @@ export default function App() {
           />
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-white truncate">{currentUser.full_name}</p>
-            <p className="text-xs text-blue-400 truncate">{currentUser.role}</p>
+            <p className="text-xs text-blue-400 truncate font-mono">{currentUser.role}</p>
           </div>
           <button
-            onClick={() =>
-              showNotification(
-                `Sesi ${currentUser.full_name} aktif (Role: ${currentUser.role})`,
-                'info'
-              )
-            }
-            className="text-emerald-400 hover:text-white p-1 rounded-lg"
-            title="RBAC Terverifikasi"
+            onClick={handleLogout}
+            className="text-xs bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 px-2.5 py-1.5 rounded-lg font-semibold transition"
+            title="Keluar dari Sesi (Logout)"
           >
-            🛡️
+            Keluar
           </button>
         </div>
       </aside>
@@ -374,21 +453,18 @@ export default function App() {
                 )
               }
               className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
+              title="Notifikasi Sistem"
             >
               <span>🔔</span>
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             </button>
             <button
-              onClick={() =>
-                showNotification(
-                  'Sistem terhubung ke server Backend DIGI WMS (Port 5000)',
-                  'success'
-                )
-              }
-              className="p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
-              title="Status Server & EMQX"
+              onClick={openHealthCheckModal}
+              className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition-all"
+              title="Klik untuk Diagnostik Kesehatan Server & EMQX"
             >
-              <span className={mqttConnected ? 'text-emerald-500' : 'text-blue-500'}>☁️</span>
+              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+              <span>☁️ Status Server</span>
             </button>
           </div>
         </header>
@@ -398,6 +474,105 @@ export default function App() {
           {renderMainContent()}
         </div>
       </main>
+
+      {/* ================= MODAL DIAGNOSTIK KESEHATAN SERVER & EMQX (ORANG 4) ================= */}
+      {showHealthModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 text-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-800">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2.5 py-0.5 rounded-full border border-emerald-500/20">
+                  Infrastructure Monitor — Orang 4
+                </span>
+                <h3 className="font-bold text-lg text-white mt-1">
+                  Status Kesehatan Server, DB & EMQX
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowHealthModal(false)}
+                className="text-slate-400 hover:text-white font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingHealth || !healthData ? (
+              <div className="py-8 text-center text-slate-400 text-sm">
+                Memeriksa koneksi ke Backend API (Port 5000)...
+              </div>
+            ) : (
+              <div className="space-y-3 text-xs">
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Status Backend API (Port 5000)</span>
+                  <span className="font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg">
+                    {healthData.status} • Uptime {healthData.uptime_seconds || 0}s
+                  </span>
+                </div>
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Engine Database & Ledger</span>
+                  <span className="font-mono font-semibold text-blue-300">
+                    {healthData.database_mode}
+                  </span>
+                </div>
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Broker EMQX MQTT (1883 / 8083)</span>
+                  <span className="font-mono font-semibold text-amber-300">
+                    {healthData.emqx_mqtt}
+                  </span>
+                </div>
+                <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
+                  <span className="text-slate-400">Spektrum Frekuensi UHF RFID</span>
+                  <span className="font-mono text-slate-200">{healthData.rfid_freq}</span>
+                </div>
+
+                {healthData.stats && (
+                  <div className="grid grid-cols-4 gap-2 pt-2">
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Akun RBAC</span>
+                      <span className="text-base font-bold text-white">
+                        {healthData.stats.total_users}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Master SKU</span>
+                      <span className="text-base font-bold text-blue-400">
+                        {healthData.stats.total_skus}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Tag RFID</span>
+                      <span className="text-base font-bold text-cyan-400">
+                        {healthData.stats.total_tags}
+                      </span>
+                    </div>
+                    <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
+                      <span className="text-[10px] text-slate-400 block">Audit Logs</span>
+                      <span className="text-base font-bold text-emerald-400">
+                        {healthData.stats.total_audit_logs}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-5 pt-4 border-t border-slate-800 flex justify-between items-center">
+              <button
+                onClick={fetchServerHealth}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold"
+              >
+                🔄 Refresh Diagnostik
+              </button>
+              <button
+                onClick={() => setShowHealthModal(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ================= MODAL TAMBAH BARANG CEPAT DARI HEADER ================= */}
       {showQuickAddModal && (
