@@ -1,0 +1,23 @@
+
+> digiwms-frontend@1.0.0 test:orang1
+> node --test tests/orang1-api.test.mjs
+
+✔ UUID from API select is retained without numeric conversion (21.4048ms)
+✔ Integer identity is also preserved in request payload (0.195ms)
+✔ Unverified product cannot be silently substituted (0.6384ms)
+✔ HTTP conflict message reaches UI (0.6284ms)
+✔ success:false on HTTP 200 never becomes success (1.3107ms)
+✔ Invalid JSON and network failures are exposed (0.8031ms)
+✔ Form supports both product naming contracts, including zero minimum (0.9295ms)
+✔ Simulated EPC generator yields 96 bits as 24 uppercase hex characters (2.0803ms)
+✔ Supabase tag_type labels are mapped without changing a legacy EPC (0.2247ms)
+✔ Missing or unrecognized legacy tag type gets an informative label, never a guessed type (0.1985ms)
+✔ Tag detail metadata is safe for new registration forms without an existing row (0.1172ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 175.0779
