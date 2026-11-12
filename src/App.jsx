@@ -4,6 +4,7 @@ import { API_BASE_URL } from './config/api';
 import DashboardOverviewPage from './modules/orang4-dashboard/DashboardOverviewPage';
 import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
+import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
 
 export default function App() {
@@ -138,6 +139,18 @@ export default function App() {
       );
     }
 
+    // Inventaris Stok per Rak (Orang 2)
+    if (activeTab === 'stok-rak') {
+      return (
+        <StockByRackPage
+          lastEvent={lastEvent}
+          searchQuery={globalSearch}
+          mqttConnected={mqttConnected}
+          showNotification={showNotification}
+        />
+      );
+    }
+
     // 3. Modul Orang 2 (Penyimpanan Rak, Picking & Packing, Pengiriman Outbound, Ledger Pergerakan)
     if (['penyimpanan', 'picking', 'pengiriman', 'ledger'].includes(activeTab)) {
       return (
@@ -229,6 +242,10 @@ export default function App() {
           <button onClick={() => switchTab('penyimpanan')} className={navClass('penyimpanan')}>
             <span>📍</span>
             <span>Penyimpanan (Rak)</span>
+          </button>
+          <button onClick={() => switchTab('stok-rak')} className={navClass('stok-rak')}>
+            <span>📊</span>
+            <span>Inventaris Stok per Rak</span>
           </button>
           <button onClick={() => switchTab('picking')} className={navClass('picking')}>
             <span>📋</span>

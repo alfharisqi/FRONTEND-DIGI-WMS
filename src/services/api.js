@@ -1,19 +1,36 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+
+const configuredApiUrl =
+  import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+// Hilangkan slash di bagian akhir.
+const normalizedApiUrl = configuredApiUrl.replace(/\/+$/, '');
+
+// Pastikan URL selalu memiliki prefix /api.
+export const API_BASE_URL = normalizedApiUrl.endsWith('/api')
+  ? normalizedApiUrl
+  : `${normalizedApiUrl}/api`;
 
 /**
- * Helper HTTP Request ringan ke Backend Node.js (Port 5000)
+ * Helper HTTP Request ke Backend Node.js
  */
 export async function apiRequest(endpoint, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+  const normalizedEndpoint = endpoint.startsWith('/')
+    ? endpoint
+    : `/${endpoint}`;
+
+  const response = await fetch(`${API_BASE_URL}${normalizedEndpoint}`, {
+    ...options,
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {}),
     },
-    ...options,
   });
 
+  const data = await response.json();
+
   if (!response.ok) {
-    throw new Error(`HTTP Error ${response.status}`);
+    throw new Error(data.message || `HTTP Error ${response.status}`);
   }
-  return response.json();
+
+  return data;
 }

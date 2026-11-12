@@ -10,10 +10,18 @@ export default function InventoryLedgerPage({
   const [locations, setLocations] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [localSearch, setLocalSearch] = useState('');
+  const [showRackModal, setShowRackModal] = useState(false);
+  const [isSavingRack, setIsSavingRack] = useState(false);
+  const [rackForm, setRackForm] = useState({
+    code: '',
+    zone_code: '',
+    name: '',
+    max_capacity: '',
+  });
 
   // Putaway Form State
   const [epcCode, setEpcCode] = useState('E280689400004001A1B2C301');
-  const [targetLoc, setTargetLoc] = useState('LOC-A-01-01');
+  const [targetLoc, setTargetLoc] = useState('');
 
   // Shipping & Outbound State (from digiwms.html)
   const [shippingList, setShippingList] = useState([
@@ -53,14 +61,25 @@ export default function InventoryLedgerPage({
     try {
       const [locRes, ledRes] = await Promise.all([
         fetch(`${API_BASE_URL}/locations`),
-        fetch(`${API_BASE_URL}/ledger`),
+        fetch(`${API_BASE_URL}/inventory/ledger`),
       ]);
+
+      if (!locRes.ok) {
+        throw new Error(`Gagal mengambil lokasi rak (HTTP ${locRes.status})`);
+      }
+
       const locJson = await locRes.json();
-      const ledJson = await ledRes.json();
-      setLocations(locJson.data || []);
-      setLedger(ledJson.data || []);
+      setLocations(Array.isArray(locJson.data) ? locJson.data : []);
+
+      // Ledger tetap dimuat untuk menu Ledger. Kegagalan endpoint ini
+      // tidak boleh menghalangi tampilan denah rak.
+      if (ledRes.ok) {
+        const ledJson = await ledRes.json();
+        setLedger(Array.isArray(ledJson.data) ? ledJson.data : []);
+      }
     } catch (err) {
       console.error('Error loading Inventory & Ledger:', err);
+      showNotification?.(err.message || 'Gagal memuat data gudang.', 'error');
     }
   };
 
@@ -68,13 +87,24 @@ export default function InventoryLedgerPage({
     fetchInventoryData();
   }, [lastEvent]);
 
+  useEffect(() => {
+    const firstRack = locations.find((loc) => loc.location_type === 'RACK');
+    const selectedRackExists = locations.some(
+      (loc) => loc.location_type === 'RACK' && loc.code === targetLoc
+    );
+
+    if (firstRack && !selectedRackExists) {
+      setTargetLoc(firstRack.code);
+    }
+  }, [locations, targetLoc]);
+
   const handlePutaway = async (e) => {
     e.preventDefault();
     try {
       const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ epc_code: epcCode, target_location: targetLoc }),
+        body: JSON.stringify({ epc: epcCode, location_code: targetLoc }),
       });
       const json = await res.json();
       if (res.ok) {
@@ -118,67 +148,293 @@ export default function InventoryLedgerPage({
     });
   };
 
+  const handleExportLedger = () => {
+    if (ledger.length === 0) {
+      showNotification?.('Tidak ada data ledger untuk diekspor.', 'error');
+      return;
+    }
+
+    const headers = [
+      'Kode Transaksi', 'Waktu', 'Jenis Mutasi', 'SKU', 'Nama Produk',
+      'Lokasi Asal', 'Lokasi Tujuan', 'Perubahan Stok', 'Saldo Berjalan',
+      'Operator', 'Dokumen Referensi',
+    ];
+    const escapeCSV = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+    const rows = ledger.map((movement) => [
+      movement.tx_code || movement.id,
+      movement.created_at ? new Date(movement.created_at).toLocaleString('id-ID') : '',
+      movement.movement_type,
+      movement.sku,
+      movement.product_name,
+      movement.from_location,
+      movement.to_location,
+      movement.qty_change ?? movement.qty,
+      movement.running_balance,
+      movement.operator_name || movement.performed_by_name,
+      movement.reference_doc,
+    ]);
+    const csv = [headers, ...rows]
+      .map((row) => row.map(escapeCSV).join(','))
+      .join('\r\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `stock-ledger-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showNotification?.('Export Stock Ledger berhasil.', 'success');
+  };
+
   const combinedSearch = (localSearch || searchQuery).toLowerCase();
 
   // ============================================================================
   // MENU 1: PENYIMPANAN (LOCATIONS / RACKS) + PUTAWAY
   // ============================================================================
   if (activeMenu === 'penyimpanan') {
+    const rackLocations = locations.filter(
+      (loc) => loc.location_type === 'RACK'
+    );
+
+    const handleAddRack = async (e) => {
+      e.preventDefault();
+
+      const payload = {
+        code: rackForm.code.trim(),
+        zone_code: rackForm.zone_code.trim(),
+        name: rackForm.name.trim(),
+        max_capacity: Number(rackForm.max_capacity),
+        location_type: 'RACK',
+      };
+
+      if (
+        !payload.code ||
+        !payload.zone_code ||
+        !payload.name ||
+        !Number.isInteger(payload.max_capacity) ||
+        payload.max_capacity <= 0
+      ) {
+        showNotification?.('Lengkapi seluruh data dan pastikan kapasitas berupa bilangan bulat positif.', 'error');
+        return;
+      }
+
+      setIsSavingRack(true);
+      try {
+        const res = await fetch(`${API_BASE_URL}/locations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        const json = await res.json();
+
+        if (!res.ok) {
+          throw new Error(json.message || 'Gagal menambahkan rak.');
+        }
+
+        showNotification?.(json.message || 'Rak berhasil ditambahkan.', 'success');
+        setRackForm({
+          code: '',
+          zone_code: '',
+          name: '',
+          max_capacity: '',
+        });
+        setShowRackModal(false);
+        await fetchInventoryData();
+      } catch (err) {
+        console.error('Error adding rack:', err);
+        showNotification?.(err.message || 'Gagal menambahkan rak.', 'error');
+      } finally {
+        setIsSavingRack(false);
+      }
+    };
+
     return (
       <div className="space-y-6">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
           <div>
             <h2 className="text-xl font-bold text-slate-900">Peta & Zona Lokasi Rak Gudang</h2>
             <p className="text-xs text-slate-500 mt-1">
-              Denah kapasitas zona rak penyimpanan aktif di dalam gudang dan penempatan Putaway RFID.
+              Denah kapasitas rak penyimpanan dan penempatan Putaway RFID.
             </p>
           </div>
-          <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3.5 py-2 rounded-xl border border-blue-200">
-            {locations.length} Zona Rak Terdaftar
-          </span>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3.5 py-2 rounded-xl border border-blue-200">
+              {rackLocations.length} Rak Terdaftar
+            </span>
+            <button
+              type="button"
+              onClick={() => setShowRackModal(true)}
+              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition"
+            >
+              + Tambah Rak
+            </button>
+          </div>
         </div>
 
-        {/* Grid Zona Rak Gudang */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-          {locations.map((loc) => {
-            const pct = Math.min(
-              100,
-              Math.round((Number(loc.occupied || 0) / Number(loc.capacity || 100)) * 100)
-            );
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          {rackLocations.map((loc) => {
+            const capacity = Number(loc.max_capacity || 0);
+            const occupied = Number(loc.current_items_count || 0);
+            const pct = capacity > 0
+              ? Math.min(100, Math.round((occupied / capacity) * 100))
+              : 0;
+
+            const status = loc.capacity_status || 'Longgar';
+            const statusClass =
+              status === 'Padat'
+                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                : status === 'Optimal'
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : 'bg-blue-50 text-blue-700 border-blue-200';
+
+            const barClass =
+              status === 'Padat'
+                ? 'bg-rose-500'
+                : status === 'Optimal'
+                  ? 'bg-emerald-500'
+                  : 'bg-blue-600';
+
             return (
               <div
-                key={loc.code}
+                key={loc.id}
                 className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all"
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-mono font-bold text-sm text-blue-600 bg-blue-50 px-2.5 py-1 rounded-lg">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono font-bold text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
                     {loc.code}
                   </span>
-                  <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded">
-                    {loc.zone}
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${statusClass}`}>
+                    {status}
                   </span>
                 </div>
-                <h4 className="font-bold text-slate-900 mt-3 text-base">{loc.name}</h4>
-                <div className="mt-4">
-                  <div className="flex justify-between text-xs text-slate-500 mb-1">
-                    <span>Okupansi Rak</span>
+
+                <h4 className="font-bold text-slate-900 mt-3 text-base">
+                  {loc.name}
+                </h4>
+                <p className="text-xs text-slate-500 mt-1">
+                  Zona: {loc.zone_code}
+                </p>
+
+                <div className="mt-5">
+                  <div className="flex justify-between text-xs text-slate-500 mb-2 gap-2">
+                    <span>Kapasitas terisi</span>
                     <span className="font-bold text-slate-800">
-                      {loc.occupied || 0} / {loc.capacity} Unit ({pct}%)
+                      {occupied} / {capacity} ({pct}%)
                     </span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
                     <div
-                      style={{ width: `${Math.max(pct, 6)}%` }}
-                      className={`h-full rounded-full ${
-                        pct > 85 ? 'bg-rose-500' : pct > 60 ? 'bg-amber-500' : 'bg-blue-600'
-                      }`}
+                      style={{ width: `${pct}%` }}
+                      className={`h-full rounded-full transition-all ${barClass}`}
                     />
                   </div>
                 </div>
               </div>
             );
           })}
+
+          {rackLocations.length === 0 && (
+            <div className="col-span-full bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center">
+              <p className="font-semibold text-slate-700">Belum ada rak penyimpanan.</p>
+              <p className="text-sm text-slate-500 mt-1">
+                Tambahkan rak baru menggunakan tombol Tambah Rak.
+              </p>
+            </div>
+          )}
         </div>
+
+        {/* Modal Tambah Rak */}
+        {showRackModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl">
+              <div className="flex items-center justify-between mb-5">
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">Tambah Rak Baru</h3>
+                  <p className="text-xs text-slate-500 mt-1">Data akan disimpan ke PostgreSQL.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowRackModal(false)}
+                  className="text-slate-400 hover:text-slate-700 text-xl"
+                  aria-label="Tutup modal"
+                >
+                  ×
+                </button>
+              </div>
+
+              <form onSubmit={handleAddRack} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kode Rak</label>
+                  <input
+                    required
+                    value={rackForm.code}
+                    onChange={(e) => setRackForm({ ...rackForm, code: e.target.value })}
+                    placeholder="Contoh: RAK-002"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kode Zona</label>
+                  <input
+                    required
+                    value={rackForm.zone_code}
+                    onChange={(e) => setRackForm({ ...rackForm, zone_code: e.target.value })}
+                    placeholder="Contoh: ZONE-A"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Nama Rak</label>
+                  <input
+                    required
+                    value={rackForm.name}
+                    onChange={(e) => setRackForm({ ...rackForm, name: e.target.value })}
+                    placeholder="Contoh: Rak Penyimpanan B"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kapasitas Maksimum</label>
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={rackForm.max_capacity}
+                    onChange={(e) => setRackForm({ ...rackForm, max_capacity: e.target.value })}
+                    placeholder="Contoh: 100"
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowRackModal(false)}
+                    disabled={isSavingRack}
+                    className="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium disabled:opacity-50"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={isSavingRack}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold disabled:opacity-60"
+                  >
+                    {isSavingRack ? 'Menyimpan...' : 'Simpan Rak'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* Form Putaway / Pindah Lokasi Rak */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
@@ -201,8 +457,8 @@ export default function InventoryLedgerPage({
               onChange={(e) => setTargetLoc(e.target.value)}
               className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
             >
-              {locations.map((l) => (
-                <option key={l.code} value={l.code}>
+              {rackLocations.map((l) => (
+                <option key={l.id} value={l.code}>
                   {l.code} — {l.name}
                 </option>
               ))}
@@ -510,12 +766,21 @@ export default function InventoryLedgerPage({
   // ============================================================================
   // MENU 4: BUKU BESAR PERGERAKAN (LEDGER APPEND-ONLY)
   // ============================================================================
-  const filteredLedger = ledger.filter(
-    (m) =>
-      m.sku?.toLowerCase().includes(combinedSearch) ||
-      m.movement_type?.toLowerCase().includes(combinedSearch) ||
-      m.reference_doc?.toLowerCase().includes(combinedSearch)
-  );
+  const filteredLedger = ledger.filter((movement) => {
+    const searchable = [
+      movement.tx_code,
+      movement.sku,
+      movement.product_name,
+      movement.movement_type,
+      movement.reference_doc,
+      movement.from_location,
+      movement.to_location,
+      movement.operator_name,
+    ];
+    return searchable.some((value) =>
+      String(value ?? '').toLowerCase().includes(combinedSearch)
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -534,9 +799,8 @@ export default function InventoryLedgerPage({
           </p>
         </div>
         <button
-          onClick={() =>
-            showNotification?.('Buku besar berhasil diexport ke CSV/Excel!', 'success')
-          }
+          type="button"
+          onClick={handleExportLedger}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
         >
           <span>📥</span>
@@ -550,7 +814,7 @@ export default function InventoryLedgerPage({
             type="text"
             value={localSearch}
             onChange={(e) => setLocalSearch(e.target.value)}
-            placeholder="Cari tipe mutasi, SKU, atau dokumen referensi..."
+            placeholder="Cari transaksi, produk, lokasi, operator, atau dokumen..."
             className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-80 focus:outline-none"
           />
         </div>
@@ -558,39 +822,64 @@ export default function InventoryLedgerPage({
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                <th className="p-4">ID Transaksi</th>
+                <th className="p-4">Kode Transaksi</th>
                 <th className="p-4">Waktu</th>
-                <th className="p-4">Tipe Transaksi</th>
-                <th className="p-4">SKU / Barang</th>
+                <th className="p-4">Jenis Mutasi</th>
+                <th className="p-4">Produk</th>
+                <th className="p-4">Lokasi Asal</th>
+                <th className="p-4">Lokasi Tujuan</th>
+                <th className="p-4">Perubahan</th>
+                <th className="p-4">Saldo Berjalan</th>
+                <th className="p-4">Operator</th>
                 <th className="p-4">Dokumen Ref</th>
-                <th className="p-4">Jumlah Mutasi</th>
-                <th className="p-4">Catatan Audit</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-slate-700">
-              {filteredLedger.map((m) => (
-                <tr key={m.id} className="hover:bg-slate-50">
-                  <td className="p-4 font-mono font-bold text-slate-500">TX-{1000 + Number(m.id)}</td>
-                  <td className="p-4 text-xs text-slate-400">
-                    {new Date(m.created_at).toLocaleString('id-ID')}
+              {filteredLedger.map((movement) => {
+                const qtyChange = Number(movement.qty_change ?? movement.qty ?? 0);
+                return (
+                  <tr key={movement.id || movement.tx_code} className="hover:bg-slate-50">
+                    <td className="p-4 font-mono font-bold text-blue-600">
+                      {movement.tx_code || movement.id || '-'}
+                    </td>
+                    <td className="p-4 text-xs text-slate-500 whitespace-nowrap">
+                      {movement.created_at
+                        ? new Date(movement.created_at).toLocaleString('id-ID')
+                        : '-'}
+                    </td>
+                    <td className="p-4">
+                      <span className="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-lg font-bold">
+                        {movement.movement_type || '-'}
+                      </span>
+                    </td>
+                    <td className="p-4">
+                      <div className="font-mono font-semibold">{movement.sku || '-'}</div>
+                      <div className="text-xs text-slate-500">{movement.product_name || '-'}</div>
+                    </td>
+                    <td className="p-4 text-xs">{movement.from_location || '-'}</td>
+                    <td className="p-4 text-xs">{movement.to_location || '-'}</td>
+                    <td className={`p-4 font-bold ${qtyChange >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {qtyChange > 0 ? '+' : ''}{qtyChange}
+                    </td>
+                    <td className="p-4 font-semibold text-slate-800">
+                      {movement.running_balance ?? '-'}
+                    </td>
+                    <td className="p-4 text-xs">
+                      {movement.operator_name || movement.performed_by_name || 'Tidak diketahui'}
+                    </td>
+                    <td className="p-4 font-mono text-xs text-slate-600">
+                      {movement.reference_doc || '-'}
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredLedger.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="p-8 text-center text-slate-500">
+                    Belum ada data mutasi stok.
                   </td>
-                  <td className="p-4">
-                    <span className="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-lg font-bold font-mono">
-                      {m.movement_type}
-                    </span>
-                  </td>
-                  <td className="p-4 font-mono font-semibold text-slate-900">{m.sku}</td>
-                  <td className="p-4 font-mono text-xs text-slate-600">{m.reference_doc}</td>
-                  <td
-                    className={`p-4 font-extrabold ${
-                      Number(m.qty_change) >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                    }`}
-                  >
-                    {Number(m.qty_change) >= 0 ? `+${m.qty_change}` : m.qty_change}
-                  </td>
-                  <td className="p-4 text-xs text-slate-500">{m.notes}</td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>
