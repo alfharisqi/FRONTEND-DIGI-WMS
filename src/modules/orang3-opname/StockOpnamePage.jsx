@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { API_BASE_URL } from '../../config/api';
+import { apiRequest } from '../../services/api';
 
 export default function StockOpnamePage({
   activeMenu = 'rfid-opname',
@@ -12,6 +12,9 @@ export default function StockOpnamePage({
   const [scanProgress, setScanProgress] = useState(0);
   const [scannedCount, setScannedCount] = useState(0);
   const [discrepancyRows, setDiscrepancyRows] = useState([]);
+  const [sessionId, setSessionId] = useState(null);
+  const [sessionCode, setSessionCode] = useState(null);
+  const [auditResult, setAuditResult] = useState(null);
 
   // Gate Alarm State (Persis Template Awal digiwms.html)
   const [gateStatus, setGateStatus] = useState('AMAN'); // 'AMAN' | 'ALARM' | 'CROSSREAD'
@@ -38,42 +41,84 @@ export default function StockOpnamePage({
 
   const audioCtxRef = useRef(null);
 
-  const fetchProducts = async () => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/products`);
-      const json = await res.json();
-      const prods = json.data || [];
-      setProducts(prods);
-      buildDiscrepancyTable(prods);
-    } catch (err) {
-      console.error('Error loading Opname products:', err);
-    }
-  };
+  
+const fetchProducts = async () => {
+  try {
+    const json = await apiRequest('/api/products');
+    const prods = json.data || [];
+    setProducts(prods);
+  } catch (err) {
+    console.error('Error loading Opname products:', err);
+    showNotification?.(err.message, 'error');
+  }
+};
 
-  const buildDiscrepancyTable = (prods) => {
-    const rows = prods.map((p, idx) => {
-      const sysStock = Number(p.current_stock || 0);
-      // Simulasi selisih 1 item pada produk pertama untuk demonstrasi audit
-      const physicalScan = idx === 0 && sysStock > 1 ? sysStock - 1 : sysStock;
-      const diff = physicalScan - sysStock;
-      return {
-        sku: p.sku,
-        name: p.name,
-        location: idx % 2 === 0 ? 'Rak A1-01' : 'Rak B2-01',
-        systemStock: sysStock,
-        scannedStock: physicalScan,
-        diff,
-        diagnosis:
-          diff === 0
-            ? 'Cocok 100% (Matched)'
-            : diff < 0
-            ? 'Selisih Kurang / Shrinkage'
-            : 'Surplus / Salah Rak',
-        approved: diff === 0,
-      };
-    });
-    setDiscrepancyRows(rows);
-  };
+
+
+const buildDiscrepancyTable = (auditData) => {
+  if (!auditData) return;
+
+  const systemStocks = auditData.system_stock || [];
+  const scannedStocks = auditData.scanned_stock || [];
+  const discrepancies = auditData.discrepancies || [];
+
+  const scannedMap = new Map(
+    scannedStocks.map((item) => [
+      item.product_id,
+      item.scanned_stock,
+    ])
+  );
+
+  // 1. Membuat baris stok normal dan Missing
+  const rows = systemStocks.map((item) => {
+    const systemStock = Number(item.system_stock || 0);
+    const scannedStock = Number(
+      scannedMap.get(item.product_id) || 0
+    );
+
+    const diff = scannedStock - systemStock;
+
+    return {
+  product_id: item.product_id,
+  sku: item.sku,
+  name: item.product_name,
+      location: `Zona ${auditData.zone_code}`,
+      systemStock,
+      scannedStock,
+      diff,
+      diagnosis:
+  diff === 0
+    ? 'Cocok 100% (Matched)'
+    : diff < 0
+    ? 'Selisih Kurang / Missing'
+    : 'Surplus / Perlu Pemeriksaan',
+approved: diff === 0,
+    };
+  });
+
+  // 2. Menambahkan barang yang terbaca di zona yang salah
+  
+const misplacedRows = discrepancies
+  .filter((item) => item.type === 'MISPLACED')
+  .map((item) => ({
+    product_id: item.product_id,
+    sku: item.sku || '-',
+    name: item.product_name || 'Produk tidak diketahui',
+    location: `Aktual: Zona ${item.actual_zone || '-'}`,
+    systemStock: 0,
+    scannedStock: 1,
+    diff: 0,
+    diagnosis: `Salah Zona (MISPLACED) - Terbaca di Zona ${item.actual_zone || '-'}`,
+    approved: false,
+    type: 'MISPLACED',
+    epc: item.epc,
+  }));
+
+
+  // 3. Menggabungkan semua baris
+  setDiscrepancyRows([...rows, ...misplacedRows]);
+};
+
 
   useEffect(() => {
     fetchProducts();
@@ -103,58 +148,163 @@ export default function StockOpnamePage({
     }
   };
 
-  const runHandheldOpnameSimulation = () => {
+
+const submitScanResults = async (epcs, activeSessionId = sessionId) => {
+  try {
+    const result = await apiRequest('/api/stocktake/scan-submit', {
+      method: 'POST',
+      body: JSON.stringify({
+        session_id: activeSessionId,
+        scanned_epcs: epcs,
+      }),
+    });
+
+    console.log('Hasil rekonsiliasi RFID:', result);
+
+    showNotification?.(
+      'Hasil scan berhasil dikirim ke backend!',
+      'success'
+    );
+
+    console.log('Data audit dari backend:', result.data);
+    return result.data;
+  } catch (err) {
+    console.error('Gagal mengirim hasil scan:', err);
+
+    showNotification?.(
+      err.message || 'Gagal mengirim hasil scan',
+      'error'
+    );
+
+    throw err;
+  }
+};
+
+
+const runHandheldOpnameSimulation = async () => {
+  try {
+    // Membuat sesi Stock Opname di backend
+    const session = await apiRequest('/api/stocktake/sessions', {
+      method: 'POST',
+      body: JSON.stringify({
+        zone_code: selectedZone,
+        scanner_device: 'Chainway C72',
+      }),
+    });
+
+    console.log('Sesi Stock Opname berhasil dibuat:', session);
+    setSessionId(session.data.id);
+    setSessionCode(session.data.session_code);
+    const activeSessionId = session.data.id;
+
+const simulatedEpcs = [
+  'E280-1160-2000-012A', // Barang A1
+  'E280-1160-2000-018B', // Barang B1
+];
+
+    // Menjalankan simulasi tampilan pemindaian
     setScanning(true);
     setScanProgress(0);
     setScannedCount(0);
+
     let step = 0;
+
     const interval = setInterval(() => {
       step += 25;
       setScanProgress(step);
-      setScannedCount((prev) => prev + Math.floor(12 + Math.random() * 15));
+
+      setScannedCount(
+        (prev) => prev + Math.floor(12 + Math.random() * 15)
+      );
+
       if (step >= 100) {
         clearInterval(interval);
-        setTimeout(() => {
-          setScanning(false);
-          fetchProducts();
-          showNotification?.(
-            `Pemindaian Handheld RFID Zona ${selectedZone} selesai!`,
-            'success'
-          );
-        }, 400);
+
+        
+setTimeout(async () => {
+  setScanning(false);
+
+  try {
+    const result = await submitScanResults(
+      simulatedEpcs,
+      activeSessionId
+    );
+
+    console.log('Detail hasil audit:', result);
+   setAuditResult(result);
+
+buildDiscrepancyTable(result);
+
+    showNotification?.(
+      `Pemindaian Zona ${selectedZone} berhasil direkonsiliasi!`,
+      'success'
+    );
+  } catch (err) {
+    console.error('Rekonsiliasi gagal:', err);
+  }
+}, 400);
+
       }
     }, 300);
-  };
 
-  const handleApproveAdjustment = async () => {
-    const mismatch = discrepancyRows.find((r) => r.diff !== 0 && !r.approved);
-    if (!mismatch) {
-      showNotification?.('Semua stok sudah sesuai dengan Buku Besar Ledger!', 'info');
-      return;
-    }
+  } catch (err) {
+    console.error('Gagal membuat sesi Stock Opname:', err);
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/opname/reconcile`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sku: mismatch.sku,
-          physical_qty: mismatch.scannedStock,
-          notes: `Rekonsiliasi Handheld RFID Zona ${selectedZone}`,
-        }),
-      });
-      const json = await res.json();
-      if (res.ok) {
-        showNotification?.(
-          json.message || `Penyesuaian ${mismatch.sku} berhasil ditulis ke Ledger!`,
-          'success'
-        );
-        fetchProducts();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+    showNotification?.(
+      err.message || 'Gagal membuat sesi Stock Opname',
+      'error'
+    );
+  }
+};
+
+  
+const handleApproveAdjustment = async () => {
+  if (!sessionCode) {
+    showNotification?.('Kode sesi opname tidak ditemukan.', 'error');
+    return;
+  }
+
+  const adjustments = discrepancyRows
+    .filter(
+      (row) =>
+        row.type !== 'MISPLACED' &&
+        row.diff !== 0 &&
+        row.product_id
+    )
+    .map((row) => ({
+      product_id: row.product_id,
+      diff_qty: row.diff,
+    }));
+
+
+  try {
+    const result = await apiRequest('/api/stocktake/approve', {
+      method: 'POST',
+      body: JSON.stringify({
+        session_code: sessionCode,
+        adjustments,
+      }),
+    });
+
+    showNotification?.(
+  result.total_adjustments === 0
+    ? 'Stock Opname berhasil disetujui. Tidak ada penyesuaian jumlah stok.'
+    : result.message || 'Persetujuan stock opname berhasil.',
+  'success'
+);
+
+    console.log('Hasil persetujuan Stock Opname:', result);
+
+    fetchProducts();
+  } catch (err) {
+    console.error('Gagal menyetujui Stock Opname:', err);
+
+    showNotification?.(
+      err.message || 'Gagal memproses persetujuan Stock Opname.',
+      'error'
+    );
+  }
+};
 
   const testGateSimulation = async (mode) => {
     const nowStr = new Date().toLocaleTimeString('id-ID');
@@ -380,15 +530,23 @@ export default function StockOpnamePage({
                     </td>
                     <td className="p-4 text-xs font-medium">{row.diagnosis}</td>
                     <td className="p-4 text-right">
-                      <span
-                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
-                          row.diff === 0
-                            ? 'bg-emerald-50 text-emerald-700'
-                            : 'bg-rose-50 text-rose-700 border border-rose-200'
-                        }`}
-                      >
-                        {row.diff === 0 ? 'Matched' : 'Perlu Rekonsiliasi'}
-                      </span>
+                      
+<span
+  className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
+    row.type === 'MISPLACED'
+      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+      : row.diff === 0
+      ? 'bg-emerald-50 text-emerald-700'
+      : 'bg-rose-50 text-rose-700 border border-rose-200'
+  }`}
+>
+  {row.type === 'MISPLACED'
+    ? 'Salah Zona'
+    : row.diff === 0
+    ? 'Matched'
+    : 'Perlu Rekonsiliasi'}
+</span>
+
                     </td>
                   </tr>
                 ))}

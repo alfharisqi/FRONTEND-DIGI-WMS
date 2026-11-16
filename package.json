@@ -7,7 +7,8 @@
   "scripts": {
     "dev": "vite --port 3000",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:orang1": "node --test tests/orang1-api.test.mjs"
   },
   "dependencies": {
     "lucide-react": "^0.400.0",

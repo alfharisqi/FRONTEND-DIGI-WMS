@@ -11,25 +11,43 @@ export const API_BASE_URL = normalizedApiUrl.endsWith('/api')
   : `${normalizedApiUrl}/api`;
 
 /**
- * Helper HTTP Request ke Backend Node.js
+ * Helper HTTP Request ke Backend DIGI WMS
+ * Otomatis mengirim JWT jika pengguna sudah login.
  */
 export async function apiRequest(endpoint, options = {}) {
+  // Normalisasi endpoint agar selalu diawali slash.
   const normalizedEndpoint = endpoint.startsWith('/')
     ? endpoint
     : `/${endpoint}`;
 
-  const response = await fetch(`${API_BASE_URL}${normalizedEndpoint}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(options.headers || {}),
-    },
-  });
+  // Ambil token JWT dari localStorage.
+  const token = localStorage.getItem('digiwms_token');
 
-  const data = await response.json();
+  const response = await fetch(
+    `${API_BASE_URL}${normalizedEndpoint}`,
+    {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.headers || {}),
+      },
+    }
+  );
+
+  // Baca response JSON satu kali.
+  let data;
+
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
 
   if (!response.ok) {
-    throw new Error(data.message || `HTTP Error ${response.status}`);
+    throw new Error(
+      data?.message || `HTTP Error ${response.status}`
+    );
   }
 
   return data;
