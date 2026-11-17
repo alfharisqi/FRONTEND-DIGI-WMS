@@ -128,6 +128,7 @@ export default function App() {
       );
       return;
     }
+
     setActiveTab(tabId);
     setSidebarOpen(false);
   };
@@ -148,6 +149,7 @@ export default function App() {
         body: JSON.stringify(quickItem),
       });
       const json = await res.json();
+
       if (res.ok) {
         showNotification(json.message || 'Barang berhasil ditambahkan!', 'success');
         setShowQuickAddModal(false);
@@ -293,6 +295,7 @@ export default function App() {
               </span>
             </div>
           </div>
+
           <button
             onClick={() => setSidebarOpen(false)}
             className="md:hidden text-slate-400 hover:text-white"
@@ -307,10 +310,12 @@ export default function App() {
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mb-1">
             Menu Utama
           </p>
+
           <button onClick={() => switchTab('dashboard')} className={navClass('dashboard')}>
             <span>📊</span>
             <span>Dashboard</span>
           </button>
+
           <button onClick={() => switchTab('penerimaan')} className={navClass('penerimaan')}>
             <span>🚚</span>
             <span>Penerimaan (Inbound)</span>
@@ -318,22 +323,27 @@ export default function App() {
               320
             </span>
           </button>
+
           <button onClick={() => switchTab('stok')} className={navClass('stok')}>
             <span>📦</span>
             <span>Stok Barang</span>
           </button>
+
           <button onClick={() => switchTab('penyimpanan')} className={navClass('penyimpanan')}>
             <span>📍</span>
             <span>Penyimpanan (Rak)</span>
           </button>
-          <button onClick={() => switchTab('inventaris')} className={navClass('inventaris')}>
+
+          <button onClick={() => switchTab('stok-rak')} className={navClass('stok-rak')}>
             <span>📊</span>
             <span>Inventaris Stok per Rak</span>
           </button>
+
           <button onClick={() => switchTab('picking')} className={navClass('picking')}>
             <span>📋</span>
             <span>Picking & Packing</span>
           </button>
+
           <button onClick={() => switchTab('pengiriman')} className={navClass('pengiriman')}>
             <span>🚀</span>
             <span>Pengiriman (Outbound)</span>
@@ -349,10 +359,12 @@ export default function App() {
               UHF 920MHz
             </span>
           </p>
+
           <button onClick={() => switchTab('rfid-tag')} className={navClass('rfid-tag')}>
             <span>🏷️</span>
             <span>Tag & Encoding</span>
           </button>
+
           <button onClick={() => switchTab('rfid-opname')} className={navClass('rfid-opname')}>
             <span>📡</span>
             <span>Opname Handheld</span>
@@ -360,6 +372,7 @@ export default function App() {
               Auto
             </span>
           </button>
+
           <button onClick={() => switchTab('rfid-gate')} className={navClass('rfid-gate')}>
             <span>🚨</span>
             <span>Gate & Alarm Live</span>
@@ -367,6 +380,7 @@ export default function App() {
               Relay
             </span>
           </button>
+
           <button onClick={() => switchTab('ledger')} className={navClass('ledger')}>
             <span>📜</span>
             <span>Ledger Pergerakan</span>
@@ -376,20 +390,24 @@ export default function App() {
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mt-5 mb-1 pt-3">
             Sistem & Analitik
           </p>
+
           {isAdminOrSupervisor && (
             <button onClick={() => switchTab('users')} className={navClass('users')}>
               <span>👥</span>
               <span>Manajemen User (RBAC)</span>
             </button>
           )}
+
           <button onClick={() => switchTab('laporan')} className={navClass('laporan')}>
             <span>📈</span>
             <span>Laporan & Analitik</span>
           </button>
+
           <button onClick={() => switchTab('pengaturan')} className={navClass('pengaturan')}>
             <span>⚙️</span>
             <span>Pengaturan</span>
           </button>
+
           <button onClick={() => switchTab('flyer')} className={navClass('flyer')}>
             <span>🖼️</span>
             <span>Flyer Promosi</span>
@@ -399,7 +417,7 @@ export default function App() {
         {/* Sidebar Footer User Profile + Tombol Logout */}
         <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex items-center space-x-3">
           <img
-            src="https\://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
             alt="User"
             className="w-10 h-10 rounded-xl object-cover border border-slate-700"
           />
@@ -428,6 +446,7 @@ export default function App() {
             >
               ☰
             </button>
+
             <div className="relative max-w-md w-64 sm:w-80">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                 🔍
@@ -451,6 +470,7 @@ export default function App() {
               <span>🚨</span>
               <span>Monitor Gate</span>
             </button>
+
             <button
               onClick={() => setShowQuickAddModal(true)}
               className="hidden sm:flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-blue-600/20 transition-all"
@@ -458,6 +478,7 @@ export default function App() {
               <span>➕</span>
               <span>Tambah Barang</span>
             </button>
+
             <button
               onClick={() => switchTab('flyer')}
               className="hidden lg:flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md transition-all"
@@ -465,6 +486,7 @@ export default function App() {
               <span>🏷️</span>
               <span>Promo Rp149rb</span>
             </button>
+
             <button
               onClick={() =>
                 showNotification(
@@ -480,6 +502,7 @@ export default function App() {
               <span>🔔</span>
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             </button>
+
             <button
               onClick={openHealthCheckModal}
               className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition-all"
@@ -530,18 +553,21 @@ export default function App() {
                     {healthData.status} • Uptime {healthData.uptime_seconds || 0}s
                   </span>
                 </div>
+
                 <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
                   <span className="text-slate-400">Engine Database & Ledger</span>
                   <span className="font-mono font-semibold text-blue-300">
                     {healthData.database_mode}
                   </span>
                 </div>
+
                 <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
                   <span className="text-slate-400">Broker EMQX MQTT (1883 / 8083)</span>
                   <span className="font-mono font-semibold text-amber-300">
                     {healthData.emqx_mqtt}
                   </span>
                 </div>
+
                 <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
                   <span className="text-slate-400">Spektrum Frekuensi UHF RFID</span>
                   <span className="font-mono text-slate-200">{healthData.rfid_freq}</span>
@@ -555,18 +581,21 @@ export default function App() {
                         {healthData.stats.total_users}
                       </span>
                     </div>
+
                     <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">Master SKU</span>
                       <span className="text-base font-bold text-blue-400">
                         {healthData.stats.total_skus}
                       </span>
                     </div>
+
                     <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">Tag RFID</span>
                       <span className="text-base font-bold text-cyan-400">
                         {healthData.stats.total_tags}
                       </span>
                     </div>
+
                     <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">Audit Logs</span>
                       <span className="text-base font-bold text-emerald-400">
@@ -639,6 +668,7 @@ export default function App() {
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                     Kategori
@@ -671,6 +701,7 @@ export default function App() {
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                     Batas Minimum Stok
