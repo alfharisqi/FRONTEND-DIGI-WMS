@@ -5,6 +5,7 @@ import DashboardOverviewPage from './modules/orang4-dashboard/DashboardOverviewP
 import LoginPage from './modules/orang4-dashboard/LoginPage';
 import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
+import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 
@@ -68,6 +69,7 @@ export default function App() {
         setMqttConnected(status);
       }
     );
+
     return () => sub.disconnect();
   }, []);
 
@@ -85,6 +87,7 @@ export default function App() {
     } catch {
       // Abaikan jika offline
     }
+
     localStorage.removeItem('digiwms_user');
     localStorage.removeItem('digiwms_token');
     setCurrentUser(null);
@@ -120,9 +123,13 @@ export default function App() {
 
   const switchTab = (tabId) => {
     if (tabId === 'users' && !isAdminOrSupervisor) {
-      showNotification('Akses Terbatas: Menu Manajemen User hanya untuk Admin / Supervisor', 'error');
+      showNotification(
+        'Akses Terbatas: Menu Manajemen User hanya untuk Admin / Supervisor',
+        'error'
+      );
       return;
     }
+
     setActiveTab(tabId);
     setSidebarOpen(false);
   };
@@ -143,6 +150,7 @@ export default function App() {
         body: JSON.stringify(quickItem),
       });
       const json = await res.json();
+
       if (res.ok) {
         showNotification(json.message || 'Barang berhasil ditambahkan!', 'success');
         setShowQuickAddModal(false);
@@ -212,6 +220,18 @@ export default function App() {
           activeMenu={activeTab}
           lastEvent={lastEvent}
           searchQuery={globalSearch}
+          showNotification={showNotification}
+        />
+      );
+    }
+
+    // Inventaris Stok per Rak (Orang 2)
+    if (['stok-rak', 'inventaris'].includes(activeTab)) {
+      return (
+        <StockByRackPage
+          lastEvent={lastEvent}
+          searchQuery={globalSearch}
+          mqttConnected={mqttConnected}
           showNotification={showNotification}
         />
       );
@@ -293,6 +313,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               </span>
             </div>
           </div>
+
           <button
             onClick={() => setSidebarOpen(false)}
             className="md:hidden text-slate-400 hover:text-white"
@@ -307,10 +328,12 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mb-1">
             Menu Utama
           </p>
+
           <button onClick={() => switchTab('dashboard')} className={navClass('dashboard')}>
             <span>📊</span>
             <span>Dashboard</span>
           </button>
+
           <button onClick={() => switchTab('penerimaan')} className={navClass('penerimaan')}>
             <span>🚚</span>
             <span>Penerimaan (Inbound)</span>
@@ -318,18 +341,27 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               320
             </span>
           </button>
+
           <button onClick={() => switchTab('stok')} className={navClass('stok')}>
             <span>📦</span>
             <span>Stok Barang</span>
           </button>
+
           <button onClick={() => switchTab('penyimpanan')} className={navClass('penyimpanan')}>
             <span>📍</span>
             <span>Penyimpanan (Rak)</span>
           </button>
+
+          <button onClick={() => switchTab('stok-rak')} className={navClass('stok-rak')}>
+            <span>📊</span>
+            <span>Inventaris Stok per Rak</span>
+          </button>
+
           <button onClick={() => switchTab('picking')} className={navClass('picking')}>
             <span>📋</span>
             <span>Picking & Packing</span>
           </button>
+
           <button onClick={() => switchTab('pengiriman')} className={navClass('pengiriman')}>
             <span>🚀</span>
             <span>Pengiriman (Outbound)</span>
@@ -345,10 +377,12 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               UHF 920MHz
             </span>
           </p>
+
           <button onClick={() => switchTab('rfid-tag')} className={navClass('rfid-tag')}>
             <span>🏷️</span>
             <span>Tag & Encoding</span>
           </button>
+
           <button onClick={() => switchTab('rfid-opname')} className={navClass('rfid-opname')}>
             <span>📡</span>
             <span>Opname Handheld</span>
@@ -356,6 +390,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               Auto
             </span>
           </button>
+
           <button onClick={() => switchTab('rfid-gate')} className={navClass('rfid-gate')}>
             <span>🚨</span>
             <span>Gate & Alarm Live</span>
@@ -363,6 +398,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               Relay
             </span>
           </button>
+
           <button onClick={() => switchTab('ledger')} className={navClass('ledger')}>
             <span>📜</span>
             <span>Ledger Pergerakan</span>
@@ -372,20 +408,24 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mt-5 mb-1 pt-3">
             Sistem & Analitik
           </p>
+
           {isAdminOrSupervisor && (
             <button onClick={() => switchTab('users')} className={navClass('users')}>
               <span>👥</span>
               <span>Manajemen User (RBAC)</span>
             </button>
           )}
+
           <button onClick={() => switchTab('laporan')} className={navClass('laporan')}>
             <span>📈</span>
             <span>Laporan & Analitik</span>
           </button>
+
           <button onClick={() => switchTab('pengaturan')} className={navClass('pengaturan')}>
             <span>⚙️</span>
             <span>Pengaturan</span>
           </button>
+
           <button onClick={() => switchTab('flyer')} className={navClass('flyer')}>
             <span>🖼️</span>
             <span>Flyer Promosi</span>
@@ -424,6 +464,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
             >
               ☰
             </button>
+
             <div className="relative max-w-md w-64 sm:w-80">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                 🔍
@@ -447,6 +488,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               <span>🚨</span>
               <span>Monitor Gate</span>
             </button>
+
             <button
               onClick={() => setShowQuickAddModal(true)}
               className="hidden sm:flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-blue-600/20 transition-all"
@@ -454,6 +496,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               <span>➕</span>
               <span>Tambah Barang</span>
             </button>
+
             <button
               onClick={() => switchTab('flyer')}
               className="hidden lg:flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md transition-all"
@@ -461,6 +504,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               <span>🏷️</span>
               <span>Promo Rp149rb</span>
             </button>
+
             <button
               onClick={() =>
                 showNotification(
@@ -476,6 +520,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
               <span>🔔</span>
               <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             </button>
+
             <button
               onClick={openHealthCheckModal}
               className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition-all"
@@ -526,18 +571,21 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                     {healthData.status} • Uptime {healthData.uptime_seconds || 0}s
                   </span>
                 </div>
+
                 <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
                   <span className="text-slate-400">Engine Database & Ledger</span>
                   <span className="font-mono font-semibold text-blue-300">
                     {healthData.database_mode}
                   </span>
                 </div>
+
                 <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
                   <span className="text-slate-400">Broker EMQX MQTT (1883 / 8083)</span>
                   <span className="font-mono font-semibold text-amber-300">
                     {healthData.emqx_mqtt}
                   </span>
                 </div>
+
                 <div className="p-3.5 bg-slate-800/80 rounded-xl border border-slate-700 flex justify-between items-center">
                   <span className="text-slate-400">Spektrum Frekuensi UHF RFID</span>
                   <span className="font-mono text-slate-200">{healthData.rfid_freq}</span>
@@ -551,18 +599,21 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                         {healthData.stats.total_users}
                       </span>
                     </div>
+
                     <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">Master SKU</span>
                       <span className="text-base font-bold text-blue-400">
                         {healthData.stats.total_skus}
                       </span>
                     </div>
+
                     <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">Tag RFID</span>
                       <span className="text-base font-bold text-cyan-400">
                         {healthData.stats.total_tags}
                       </span>
                     </div>
+
                     <div className="bg-slate-950 p-2.5 rounded-xl text-center border border-slate-800">
                       <span className="text-[10px] text-slate-400 block">Audit Logs</span>
                       <span className="text-base font-bold text-emerald-400">
@@ -605,6 +656,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                 ✕
               </button>
             </div>
+
             <form onSubmit={handleQuickAddItem} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -619,6 +671,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -633,6 +686,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                     Kategori
@@ -649,6 +703,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                   </select>
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -664,6 +719,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                   />
                 </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                     Batas Minimum Stok
@@ -679,6 +735,7 @@ if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
                   />
                 </div>
               </div>
+
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"
