@@ -7,7 +7,6 @@ import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
-import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
