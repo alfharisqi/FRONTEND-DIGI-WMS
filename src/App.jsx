@@ -7,7 +7,6 @@ import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
-import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -238,32 +237,16 @@ export default function App() {
     }
 
     // 3. Modul Orang 2 (Penyimpanan Rak, Picking & Packing, Pengiriman Outbound, Ledger Pergerakan)
-    
-// 3. Modul Orang 2
-
-// Inventaris stok berdasarkan rak dengan pembaruan MQTT realtime.
-if (activeTab === 'penyimpanan') {
-  return (
-    <StockByRackPage
-      lastEvent={lastEvent}
-      searchQuery={globalSearch}
-      mqttConnected={mqttConnected}
-      showNotification={showNotification}
-    />
-  );
-}
-
-// Picking, Packing, Pengiriman, dan Stock Ledger.
-if (['picking', 'pengiriman', 'ledger'].includes(activeTab)) {
-  return (
-    <InventoryLedgerPage
-      activeMenu={activeTab}
-      lastEvent={lastEvent}
-      searchQuery={globalSearch}
-      showNotification={showNotification}
-    />
-  );
-}
+    if (['penyimpanan', 'picking', 'pengiriman', 'ledger'].includes(activeTab)) {
+      return (
+        <InventoryLedgerPage
+          activeMenu={activeTab}
+          lastEvent={lastEvent}
+          searchQuery={globalSearch}
+          showNotification={showNotification}
+        />
+      );
+    }
 
 
     // 4. Modul Orang 3 (Opname Handheld RFID & Gate Alarm Live)
