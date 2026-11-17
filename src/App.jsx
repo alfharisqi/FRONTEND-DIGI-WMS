@@ -68,6 +68,7 @@ export default function App() {
         setMqttConnected(status);
       }
     );
+
     return () => sub.disconnect();
   }, []);
 
@@ -85,6 +86,7 @@ export default function App() {
     } catch {
       // Abaikan jika offline
     }
+
     localStorage.removeItem('digiwms_user');
     localStorage.removeItem('digiwms_token');
     setCurrentUser(null);
@@ -120,7 +122,10 @@ export default function App() {
 
   const switchTab = (tabId) => {
     if (tabId === 'users' && !isAdminOrSupervisor) {
-      showNotification('Akses Terbatas: Menu Manajemen User hanya untuk Admin / Supervisor', 'error');
+      showNotification(
+        'Akses Terbatas: Menu Manajemen User hanya untuk Admin / Supervisor',
+        'error'
+      );
       return;
     }
     setActiveTab(tabId);
@@ -218,7 +223,7 @@ export default function App() {
     }
 
     // Inventaris Stok per Rak (Orang 2)
-    if (activeTab === 'stok-rak') {
+    if (['stok-rak', 'inventaris'].includes(activeTab)) {
       return (
         <StockByRackPage
           lastEvent={lastEvent}
@@ -321,7 +326,7 @@ export default function App() {
             <span>📍</span>
             <span>Penyimpanan (Rak)</span>
           </button>
-          <button onClick={() => switchTab('stok-rak')} className={navClass('stok-rak')}>
+          <button onClick={() => switchTab('inventaris')} className={navClass('inventaris')}>
             <span>📊</span>
             <span>Inventaris Stok per Rak</span>
           </button>
@@ -394,7 +399,7 @@ export default function App() {
         {/* Sidebar Footer User Profile + Tombol Logout */}
         <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex items-center space-x-3">
           <img
-            src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
+            src="https\://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
             alt="User"
             className="w-10 h-10 rounded-xl object-cover border border-slate-700"
           />
@@ -604,6 +609,7 @@ export default function App() {
                 ✕
               </button>
             </div>
+
             <form onSubmit={handleQuickAddItem} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -618,6 +624,7 @@ export default function App() {
                   className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -648,6 +655,7 @@ export default function App() {
                   </select>
                 </div>
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -678,6 +686,7 @@ export default function App() {
                   />
                 </div>
               </div>
+
               <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
                 <button
                   type="button"

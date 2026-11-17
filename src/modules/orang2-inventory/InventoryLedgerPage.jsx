@@ -79,7 +79,7 @@ export default function InventoryLedgerPage({
       }
     } catch (err) {
       console.error('Error loading Inventory & Ledger:', err);
-      showNotification?.(err.message || 'Gagal memuat data gudang.', 'error');
+      showNotification?.(err.message || 'Gagal memuat data inventaris.', 'error');
     }
   };
 
@@ -100,24 +100,81 @@ export default function InventoryLedgerPage({
 
   const handlePutaway = async (e) => {
     e.preventDefault();
+    if (!epcCode.trim() || !targetLoc) {
+      showNotification?.('Masukkan EPC dan pilih rak tujuan.', 'error');
+      return;
+    }
+
     try {
       const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ epc: epcCode, location_code: targetLoc }),
+        body: JSON.stringify({ epc: epcCode.trim(), location_code: targetLoc }),
       });
+
       const json = await res.json();
-      if (res.ok) {
-        showNotification?.(
-          json.message || `Tag ${epcCode} dipindahkan ke ${targetLoc}`,
-          'success'
-        );
-        fetchInventoryData();
-      } else {
-        showNotification?.(json.message || 'Gagal memindahkan rak', 'error');
+      if (!res.ok) {
+        throw new Error(json.message || 'Gagal memproses Putaway.');
       }
+
+      showNotification?.(
+        json.message || `Tag ${epcCode} berhasil ditempatkan di ${targetLoc}`,
+        'success'
+      );
+      await fetchInventoryData();
+      setEpcCode('');
     } catch (err) {
-      console.error(err);
+      console.error('Putaway error:', err);
+      showNotification?.(err.message || 'Terjadi kesalahan saat Putaway.', 'error');
+    }
+  };
+
+  const handleAddRack = async (e) => {
+    e.preventDefault();
+    const payload = {
+      code: rackForm.code.trim(),
+      zone_code: rackForm.zone_code.trim(),
+      name: rackForm.name.trim(),
+      max_capacity: Number(rackForm.max_capacity),
+      location_type: 'RACK',
+    };
+
+    if (
+      !payload.code ||
+      !payload.zone_code ||
+      !payload.name ||
+      !Number.isInteger(payload.max_capacity) ||
+      payload.max_capacity <= 0
+    ) {
+      showNotification?.(
+        'Lengkapi semua data rak. Kapasitas harus berupa bilangan bulat lebih dari 0.',
+        'error'
+      );
+      return;
+    }
+
+    setIsSavingRack(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.message || 'Gagal menambahkan rak.');
+      }
+
+      showNotification?.(json.message || 'Rak baru berhasil ditambahkan.', 'success');
+      setRackForm({ code: '', zone_code: '', name: '', max_capacity: '' });
+      setShowRackModal(false);
+      await fetchInventoryData();
+    } catch (err) {
+      console.error('Add rack error:', err);
+      showNotification?.(err.message || 'Terjadi kesalahan saat menambahkan rak.', 'error');
+    } finally {
+      setIsSavingRack(false);
     }
   };
 
@@ -155,11 +212,21 @@ export default function InventoryLedgerPage({
     }
 
     const headers = [
-      'Kode Transaksi', 'Waktu', 'Jenis Mutasi', 'SKU', 'Nama Produk',
-      'Lokasi Asal', 'Lokasi Tujuan', 'Perubahan Stok', 'Saldo Berjalan',
-      'Operator', 'Dokumen Referensi',
+      'Kode Transaksi',
+      'Waktu',
+      'Jenis Mutasi',
+      'SKU',
+      'Nama Produk',
+      'Lokasi Asal',
+      'Lokasi Tujuan',
+      'Perubahan Stok',
+      'Saldo Berjalan',
+      'Operator',
+      'Dokumen Referensi',
     ];
+
     const escapeCSV = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+
     const rows = ledger.map((movement) => [
       movement.tx_code || movement.id,
       movement.created_at ? new Date(movement.created_at).toLocaleString('id-ID') : '',
@@ -173,9 +240,11 @@ export default function InventoryLedgerPage({
       movement.operator_name || movement.performed_by_name,
       movement.reference_doc,
     ]);
+
     const csv = [headers, ...rows]
       .map((row) => row.map(escapeCSV).join(','))
       .join('\r\n');
+
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -194,62 +263,7 @@ export default function InventoryLedgerPage({
   // MENU 1: PENYIMPANAN (LOCATIONS / RACKS) + PUTAWAY
   // ============================================================================
   if (activeMenu === 'penyimpanan') {
-    const rackLocations = locations.filter(
-      (loc) => loc.location_type === 'RACK'
-    );
-
-    const handleAddRack = async (e) => {
-      e.preventDefault();
-
-      const payload = {
-        code: rackForm.code.trim(),
-        zone_code: rackForm.zone_code.trim(),
-        name: rackForm.name.trim(),
-        max_capacity: Number(rackForm.max_capacity),
-        location_type: 'RACK',
-      };
-
-      if (
-        !payload.code ||
-        !payload.zone_code ||
-        !payload.name ||
-        !Number.isInteger(payload.max_capacity) ||
-        payload.max_capacity <= 0
-      ) {
-        showNotification?.('Lengkapi seluruh data dan pastikan kapasitas berupa bilangan bulat positif.', 'error');
-        return;
-      }
-
-      setIsSavingRack(true);
-      try {
-        const res = await fetch(`${API_BASE_URL}/locations`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-
-        const json = await res.json();
-
-        if (!res.ok) {
-          throw new Error(json.message || 'Gagal menambahkan rak.');
-        }
-
-        showNotification?.(json.message || 'Rak berhasil ditambahkan.', 'success');
-        setRackForm({
-          code: '',
-          zone_code: '',
-          name: '',
-          max_capacity: '',
-        });
-        setShowRackModal(false);
-        await fetchInventoryData();
-      } catch (err) {
-        console.error('Error adding rack:', err);
-        showNotification?.(err.message || 'Gagal menambahkan rak.', 'error');
-      } finally {
-        setIsSavingRack(false);
-      }
-    };
+    const rackLocations = locations.filter((loc) => loc.location_type === 'RACK');
 
     return (
       <div className="space-y-6">
@@ -260,7 +274,6 @@ export default function InventoryLedgerPage({
               Denah kapasitas rak penyimpanan dan penempatan Putaway RFID.
             </p>
           </div>
-
           <div className="flex flex-wrap items-center gap-2">
             <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3.5 py-2 rounded-xl border border-blue-200">
               {rackLocations.length} Rak Terdaftar
@@ -279,10 +292,10 @@ export default function InventoryLedgerPage({
           {rackLocations.map((loc) => {
             const capacity = Number(loc.max_capacity || 0);
             const occupied = Number(loc.current_items_count || 0);
-            const pct = capacity > 0
-              ? Math.min(100, Math.round((occupied / capacity) * 100))
-              : 0;
-
+            const pct =
+              capacity > 0
+                ? Math.min(100, Math.round((occupied / capacity) * 100))
+                : 0;
             const status = loc.capacity_status || 'Longgar';
             const statusClass =
               status === 'Padat'
@@ -290,7 +303,6 @@ export default function InventoryLedgerPage({
                 : status === 'Optimal'
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                   : 'bg-blue-50 text-blue-700 border-blue-200';
-
             const barClass =
               status === 'Padat'
                 ? 'bg-rose-500'
@@ -311,14 +323,12 @@ export default function InventoryLedgerPage({
                     {status}
                   </span>
                 </div>
-
                 <h4 className="font-bold text-slate-900 mt-3 text-base">
                   {loc.name}
                 </h4>
                 <p className="text-xs text-slate-500 mt-1">
                   Zona: {loc.zone_code}
                 </p>
-
                 <div className="mt-5">
                   <div className="flex justify-between text-xs text-slate-500 mb-2 gap-2">
                     <span>Kapasitas terisi</span>
@@ -368,7 +378,9 @@ export default function InventoryLedgerPage({
 
               <form onSubmit={handleAddRack} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kode Rak</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    Kode Rak
+                  </label>
                   <input
                     required
                     value={rackForm.code}
@@ -377,9 +389,10 @@ export default function InventoryLedgerPage({
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kode Zona</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    Kode Zona
+                  </label>
                   <input
                     required
                     value={rackForm.zone_code}
@@ -388,9 +401,10 @@ export default function InventoryLedgerPage({
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Nama Rak</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    Nama Rak
+                  </label>
                   <input
                     required
                     value={rackForm.name}
@@ -399,9 +413,10 @@ export default function InventoryLedgerPage({
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">Kapasitas Maksimum</label>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+                    Kapasitas Maksimum
+                  </label>
                   <input
                     required
                     type="number"
@@ -447,25 +462,29 @@ export default function InventoryLedgerPage({
           <form onSubmit={handlePutaway} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
               type="text"
+              required
               value={epcCode}
               onChange={(e) => setEpcCode(e.target.value)}
               placeholder="Kode EPC Tag RFID"
               className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
             />
             <select
+              required
               value={targetLoc}
               onChange={(e) => setTargetLoc(e.target.value)}
               className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
             >
+              <option value="">Pilih rak tujuan</option>
               {rackLocations.map((l) => (
-                <option key={l.id} value={l.code}>
+                <option key={l.id || l.code} value={l.code}>
                   {l.code} — {l.name}
                 </option>
               ))}
             </select>
             <button
               type="submit"
-              className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-md transition"
+              disabled={rackLocations.length === 0}
+              className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-md transition"
             >
               Simpan Putaway Rak
             </button>
@@ -858,8 +877,13 @@ export default function InventoryLedgerPage({
                     </td>
                     <td className="p-4 text-xs">{movement.from_location || '-'}</td>
                     <td className="p-4 text-xs">{movement.to_location || '-'}</td>
-                    <td className={`p-4 font-bold ${qtyChange >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {qtyChange > 0 ? '+' : ''}{qtyChange}
+                    <td
+                      className={`p-4 font-bold ${
+                        qtyChange >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                      }`}
+                    >
+                      {qtyChange > 0 ? '+' : ''}
+                      {qtyChange}
                     </td>
                     <td className="p-4 font-semibold text-slate-800">
                       {movement.running_balance ?? '-'}
