@@ -1,0 +1,916 @@
+import React, { useState, useEffect } from 'react';
+import { API_BASE_URL } from '../../config/api';
+
+export default function GateSecurityPage({
+  switchTab,
+  lastEvent,
+  mqttConnected,
+  currentUser,
+  showNotification,
+}) {
+  // State Utama
+  const [gatePasses, setGatePasses] = useState([]);
+  const [gateEvents, setGateEvents] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeFilter, setActiveFilter] = useState('ALL'); // ALL, ACTIVE, USED, EXPIRED
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // State Scanner & Verifikasi Cepat
+  const [inputCode, setInputCode] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [verificationResult, setVerificationResult] = useState(null);
+  const [confirmingExit, setConfirmingExit] = useState(false);
+
+  // State Modal Cetak Gate Pass
+  const [selectedPassForPrint, setSelectedPassForPrint] = useState(null);
+
+  // State Modal Terbitkan Gate Pass Manual
+  const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [generateForm, setGenerateForm] = useState({
+    reference_resi: '',
+    reference_type: 'OUTBOUND_SHIPMENT',
+    customer_or_destination: '',
+    courier: 'JNE Express',
+    epc_list: '',
+    valid_hours: 24,
+  });
+
+  // State Alarm Darurat (Breach)
+  const [simulatingBreach, setSimulatingBreach] = useState(false);
+
+  // 1. Fetch Data Gate Passes & Gate Events
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [gpRes, geRes] = await Promise.all([
+        fetch(`${API_BASE_URL}/gate-passes`),
+        fetch(`${API_BASE_URL}/gate/events?limit=10`),
+      ]);
+      const gpJson = await gpRes.json();
+      const geJson = await geRes.json();
+
+      setGatePasses(gpJson.data || []);
+      setGateEvents(geJson.data || []);
+    } catch (err) {
+      console.error('Gagal mengambil data Gate Pass & Security:', err);
+      showNotification?.('Gagal memuat data gerbang keamanan dari server', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, []);
+
+  // Tangkap event real-time dari MQTT jika ada
+  useEffect(() => {
+    if (lastEvent?.event === 'GATE_PASS_GENERATED' || lastEvent?.event === 'GATE_EXIT_CONFIRMED') {
+      fetchData();
+    }
+    if (lastEvent?.event === 'SECURITY_BREACH_ALARM') {
+      showNotification?.(
+        `🚨 PERINGATAN DARURAT: Deteksi barang tanpa izin keluar di ${lastEvent.gate_id || 'Gerbang'}!`,
+        'error'
+      );
+      fetchData();
+    }
+  }, [lastEvent]);
+
+  // 2. Handler Verifikasi Cepat Gate Pass
+  const handleVerifyPass = async (codeToVerify) => {
+    const code = (codeToVerify || inputCode).trim();
+    if (!code) {
+      showNotification?.('Silakan masukkan atau scan nomor Gate Pass / No. Resi!', 'warn');
+      return;
+    }
+
+    setVerifying(true);
+    setVerificationResult(null);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/gate-passes/${encodeURIComponent(code)}/verify`);
+      const json = await res.json();
+      setVerificationResult(json);
+
+      if (json.is_valid && json.verification_status === 'AUTHORIZED') {
+        showNotification?.(json.message || 'Gate Pass SAH & AKTIF!', 'success');
+      } else {
+        showNotification?.(json.message || 'Pemeriksaan izin keluar: DITOLAK / TIDAK VALID', 'warn');
+      }
+    } catch (err) {
+      console.error('Error verifying gate pass:', err);
+      setVerificationResult({
+        status: 'error',
+        is_valid: false,
+        verification_status: 'NETWORK_ERROR',
+        message: 'Gagal menghubungi server backend untuk verifikasi.',
+      });
+      showNotification?.('Koneksi verifikasi gagal ke server!', 'error');
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  // 3. Handler Konfirmasi Scan-Out (Izinkan Barang Keluar)
+  const handleConfirmExit = async (passCode) => {
+    if (!passCode) return;
+    setConfirmingExit(true);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/gate-passes/${encodeURIComponent(passCode)}/scan-out`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gate_id: 'GATE-01',
+          antenna_info: 'Antena Portal Keluar (1 & 2)',
+          rssi: '-52 dBm',
+          operator_name: currentUser?.full_name || 'Petugas Keamanan Satpam',
+        }),
+      });
+
+      const json = await res.json();
+      if (res.ok) {
+        showNotification?.(json.message || 'Barang resmi diizinkan melintasi gerbang!', 'success');
+        // Refresh verifikasi hasil scan
+        setVerificationResult({
+          status: 'warn',
+          is_valid: false,
+          verification_status: 'ALREADY_USED',
+          message: `BARANG TELAH RESMI KELUAR! Status Gate Pass ${passCode} kini diubah menjadi: USED.`,
+          data: json.data,
+        });
+        fetchData();
+      } else {
+        showNotification?.(json.message || 'Gagal konfirmasi keluar gerbang', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showNotification?.('Terjadi kesalahan saat memproses scan out', 'error');
+    } finally {
+      setConfirmingExit(false);
+    }
+  };
+
+  // 4. Handler Terbitkan Gate Pass Manual (Modal Generator)
+  const handleGenerateGatePass = async (e) => {
+    e.preventDefault();
+    if (!generateForm.reference_resi) {
+      showNotification?.('Nomor Resi / Dokumen wajib diisi!', 'warn');
+      return;
+    }
+
+    setGenerating(true);
+    try {
+      const epcArray = generateForm.epc_list
+        ? generateForm.epc_list.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      const res = await fetch(`${API_BASE_URL}/gate-passes/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          reference_resi: generateForm.reference_resi,
+          reference_type: generateForm.reference_type,
+          customer_or_destination: generateForm.customer_or_destination,
+          courier: generateForm.courier,
+          epc_list: epcArray,
+          valid_hours: Number(generateForm.valid_hours) || 24,
+          authorized_by: currentUser?.id || null,
+        }),
+      });
+
+      const json = await res.json();
+      if (res.ok) {
+        showNotification?.(json.message || 'Gate Pass resmi berhasil diterbitkan!', 'success');
+        setShowGenerateModal(false);
+        setGenerateForm({
+          reference_resi: '',
+          reference_type: 'OUTBOUND_SHIPMENT',
+          customer_or_destination: '',
+          courier: 'JNE Express',
+          epc_list: '',
+          valid_hours: 24,
+        });
+        fetchData();
+        // Langsung masukkan ke scanner untuk kemudahan demo
+        if (json.data?.pass_code) {
+          setInputCode(json.data.pass_code);
+          handleVerifyPass(json.data.pass_code);
+        }
+      } else {
+        showNotification?.(json.message || 'Gagal menerbitkan Gate Pass', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showNotification?.('Terjadi kesalahan jaringan saat menerbitkan Gate Pass', 'error');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  // 5. Handler Uji Simulasi Alarm Breach (Anti-Theft)
+  const handleTriggerAlarmBreach = async () => {
+    if (!window.confirm('Simulasikan deteksi barang tanpa izin keluar (Anti-Theft Breach Test)?')) {
+      return;
+    }
+    setSimulatingBreach(true);
+    try {
+      const randomEpc = `E280-UNAUTH-${Math.floor(1000 + Math.random() * 9000)}`;
+      const res = await fetch(`${API_BASE_URL}/gate/alarm-breach`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          epc: randomEpc,
+          item_name: 'Barang Tanpa Pas Jalan Sah (Uji Anti-Theft)',
+          gate_id: 'GATE-01',
+          antenna_info: 'Antena 1 (Gerbang Keluar)',
+          rssi: '-45 dBm',
+          notes: 'Deteksi uji anti-pencurian: Tag RFID melintasi gerbang tanpa status AUTHORIZED_OUT',
+        }),
+      });
+      const json = await res.json();
+      showNotification?.(json.message || '🚨 SIRENE DARURAT DIAKTIFKAN: Deteksi barang tanpa izin keluar!', 'error');
+      fetchData();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSimulatingBreach(false);
+    }
+  };
+
+  // Filter & Search Gate Passes
+  const filteredGatePasses = gatePasses.filter((gp) => {
+    const statusUpper = String(gp.status || '').toUpperCase();
+    if (activeFilter !== 'ALL' && statusUpper !== activeFilter) {
+      return false;
+    }
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const codeMatch = String(gp.pass_code || '').toLowerCase().includes(q);
+      const resiMatch = String(gp.reference_resi || '').toLowerCase().includes(q);
+      const destMatch = String(gp.customer_or_destination || '').toLowerCase().includes(q);
+      const courierMatch = String(gp.courier || '').toLowerCase().includes(q);
+      return codeMatch || resiMatch || destMatch || courierMatch;
+    }
+    return true;
+  });
+
+  // Hitung Metrik Ringkas
+  const totalActive = gatePasses.filter((g) => String(g.status).toUpperCase() === 'ACTIVE').length;
+  const totalUsed = gatePasses.filter((g) => String(g.status).toUpperCase() === 'USED').length;
+
+  return (
+    <div className="space-y-6">
+      {/* ================= HEADER SECTION ================= */}
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <span>🛡️</span>
+              <span>Portal Keamanan Gerbang & Gate Pass</span>
+            </h1>
+            <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200/60">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+              <span>GATE-01 (Portal Keluar Aktif)</span>
+            </span>
+            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
+              MVP 2 Security Engine
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 mt-1.5">
+            Pemeriksaan otorisasi digital pas jalan (*Gate Pass*), validasi RFID anti-theft sebelum kendaraan keluar, dan pencatatan audit gerbang.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+          <button
+            onClick={() => setShowGenerateModal(true)}
+            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm shadow-blue-600/20 transition inline-flex items-center space-x-1.5"
+          >
+            <span>➕</span>
+            <span>Terbitkan Gate Pass</span>
+          </button>
+          <button
+            onClick={handleTriggerAlarmBreach}
+            disabled={simulatingBreach}
+            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 rounded-xl text-xs font-semibold shadow-sm transition inline-flex items-center space-x-1.5"
+            title="Simulasikan Barang Tanpa Izin Melintas Portal"
+          >
+            <span>🚨</span>
+            <span>{simulatingBreach ? 'Memproses...' : 'Uji Alarm Breach'}</span>
+          </button>
+          <button
+            onClick={fetchData}
+            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+            title="Muat Ulang Data"
+          >
+            🔄
+          </button>
+        </div>
+      </div>
+
+      {/* ================= 3 KPI STATS CARDS ================= */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Gate Pass Aktif</span>
+            <div className="mt-1 flex items-baseline space-x-2">
+              <span className="text-2xl font-black text-emerald-600">{totalActive}</span>
+              <span className="text-xs text-slate-500">Izin Sah Siap Keluar</span>
+            </div>
+          </div>
+          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-2xl text-emerald-600">
+            ✅
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Telah Keluar (Used)</span>
+            <div className="mt-1 flex items-baseline space-x-2">
+              <span className="text-2xl font-black text-slate-700">{totalUsed}</span>
+              <span className="text-xs text-slate-500">Tercatat Melintasi Gerbang</span>
+            </div>
+          </div>
+          <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-2xl text-slate-600">
+            🚚
+          </div>
+        </div>
+
+        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+          <div>
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status Portal Keamanan</span>
+            <div className="mt-1 flex items-baseline space-x-2">
+              <span className="text-base font-bold text-slate-900">SIAGA NORMAL</span>
+              <span className="text-xs text-emerald-600 font-semibold">• 100% Aman</span>
+            </div>
+          </div>
+          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-2xl text-blue-600">
+            🛡️
+          </div>
+        </div>
+      </div>
+
+      {/* ================= CORE VERIFICATION SCANNER ================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center space-x-2.5">
+            <span className="text-xl">🔍</span>
+            <div>
+              <h2 className="text-sm font-bold tracking-wide uppercase">Terminal Verifikasi Scanner Gerbang (Satpam)</h2>
+              <p className="text-[11px] text-slate-400">Arahkan barcode scanner atau ketik kode Gate Pass sebelum gerbang dibuka</p>
+            </div>
+          </div>
+          <span className="text-xs font-mono bg-slate-800 text-blue-400 px-3 py-1 rounded-lg border border-slate-700">
+            MODE: LIVE SCANNER
+          </span>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Input Scanner */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={inputCode}
+                onChange={(e) => setInputCode(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleVerifyPass()}
+                placeholder="Scan Barcode / Masukkan Kode Gate Pass (cth: GP-POS-7261 atau GP-XXXX-XXXX)..."
+                className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium tracking-wide shadow-inner"
+              />
+              <span className="absolute left-3.5 top-3.5 text-base text-slate-400">🏷️</span>
+            </div>
+            <button
+              onClick={() => handleVerifyPass()}
+              disabled={verifying}
+              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm rounded-xl shadow-md shadow-blue-600/30 transition flex items-center justify-center space-x-2 shrink-0"
+            >
+              {verifying ? (
+                <>
+                  <span className="animate-spin">⏳</span>
+                  <span>Memeriksa...</span>
+                </>
+              ) : (
+                <>
+                  <span>🔎</span>
+                  <span>Periksa Keabsahan Izin</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* HASIL VERIFIKASI VISUAL (INTERAKTIF) */}
+          {verificationResult ? (
+            <div
+              className={`p-6 rounded-2xl border-2 transition-all ${
+                verificationResult.is_valid && verificationResult.verification_status === 'AUTHORIZED'
+                  ? 'bg-emerald-50/80 border-emerald-500 text-emerald-950'
+                  : verificationResult.verification_status === 'ALREADY_USED'
+                  ? 'bg-amber-50 border-amber-400 text-amber-950'
+                  : 'bg-rose-50 border-rose-500 text-rose-950'
+              }`}
+            >
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-black/10 pb-4">
+                <div className="flex items-center space-x-3">
+                  <div
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shadow-sm ${
+                      verificationResult.is_valid && verificationResult.verification_status === 'AUTHORIZED'
+                        ? 'bg-emerald-600 text-white'
+                        : verificationResult.verification_status === 'ALREADY_USED'
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-rose-600 text-white'
+                    }`}
+                  >
+                    {verificationResult.is_valid && verificationResult.verification_status === 'AUTHORIZED'
+                      ? '✓'
+                      : verificationResult.verification_status === 'ALREADY_USED'
+                      ? '⚠️'
+                      : '✕'}
+                  </div>
+                  <div>
+                    <span
+                      className={`text-[11px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                        verificationResult.is_valid && verificationResult.verification_status === 'AUTHORIZED'
+                          ? 'bg-emerald-200/80 text-emerald-900'
+                          : verificationResult.verification_status === 'ALREADY_USED'
+                          ? 'bg-amber-200 text-amber-900'
+                          : 'bg-rose-200 text-rose-900'
+                      }`}
+                    >
+                      {verificationResult.verification_status}
+                    </span>
+                    <h3 className="text-base font-extrabold mt-1">
+                      {verificationResult.message}
+                    </h3>
+                  </div>
+                </div>
+
+                {/* Tombol Konfirmasi Keluar (Jika Status Valid & Aktif) */}
+                {verificationResult.is_valid && verificationResult.verification_status === 'AUTHORIZED' && (
+                  <button
+                    onClick={() => handleConfirmExit(verificationResult.data?.pass_code)}
+                    disabled={confirmingExit}
+                    className="w-full lg:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center space-x-2 shrink-0 animate-pulse"
+                  >
+                    <span>🚀</span>
+                    <span>{confirmingExit ? 'Menyimpan Konfirmasi...' : 'IZINKAN KELUAR & BUKA GERBANG'}</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Rincian Pas Jalan */}
+              {verificationResult.data && (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs">
+                  <div className="bg-white/80 p-3 rounded-xl border border-black/5">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Nomor Gate Pass</span>
+                    <p className="font-mono font-bold text-sm text-slate-900 mt-0.5">
+                      {verificationResult.data.pass_code}
+                    </p>
+                  </div>
+                  <div className="bg-white/80 p-3 rounded-xl border border-black/5">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Dokumen Resi / Invoice</span>
+                    <p className="font-mono font-bold text-sm text-slate-900 mt-0.5">
+                      {verificationResult.data.reference_resi || '-'}
+                    </p>
+                  </div>
+                  <div className="bg-white/80 p-3 rounded-xl border border-black/5">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Tujuan / Pelanggan</span>
+                    <p className="font-semibold text-slate-900 mt-0.5 truncate">
+                      {verificationResult.data.customer_or_destination || 'Walk-In Customer'}
+                    </p>
+                  </div>
+                  <div className="bg-white/80 p-3 rounded-xl border border-black/5">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase">Kurir / Metode</span>
+                    <p className="font-semibold text-slate-900 mt-0.5 truncate">
+                      {verificationResult.data.courier || 'Kurir Ekspedisi'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center text-center text-slate-400 space-y-2">
+              <span className="text-3xl">📡</span>
+              <p className="text-xs font-medium text-slate-600">
+                Menunggu input scan kode Gate Pass.
+              </p>
+              <p className="text-[11px] text-slate-400 max-w-md">
+                Klik salah satu tombol <strong>"Verifikasi"</strong> di tabel bawah atau gunakan kode contoh seperti{' '}
+                <button
+                  onClick={() => {
+                    const sample = gatePasses[0]?.pass_code;
+                    if (sample) {
+                      setInputCode(sample);
+                      handleVerifyPass(sample);
+                    }
+                  }}
+                  className="text-blue-600 font-mono font-bold underline"
+                >
+                  {gatePasses[0]?.pass_code || 'GP-Contoh'}
+                </button>
+              </p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ================= TABEL RIWAYAT GATE PASS ================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        {/* Table Header & Controls */}
+        <div className="p-5 border-b border-slate-200/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-2">Filter:</span>
+            {['ALL', 'ACTIVE', 'USED', 'EXPIRED'].map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveFilter(tab)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                  activeFilter === tab
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                {tab === 'ALL' ? 'Semua' : tab === 'ACTIVE' ? 'Aktif' : tab === 'USED' ? 'Digunakan' : 'Kadaluwarsa'}
+              </button>
+            ))}
+          </div>
+
+          <div className="w-full sm:w-64 relative">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari pas, resi, tujuan..."
+              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+            <span className="absolute left-2.5 top-2 text-xs text-slate-400">🔍</span>
+          </div>
+        </div>
+
+        {/* Table Body */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-4">No. Gate Pass</th>
+                <th className="py-3 px-4">Dokumen Acuan</th>
+                <th className="py-3 px-4">Tujuan & Kurir</th>
+                <th className="py-3 px-4">Masa Berlaku</th>
+                <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-right">Aksi Operator</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+              {loading ? (
+                <tr>
+                  <td colSpan="6" className="py-8 text-center text-slate-400">
+                    Memuat daftar pas jalan...
+                  </td>
+                </tr>
+              ) : filteredGatePasses.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="py-8 text-center text-slate-400">
+                    Tidak ada Gate Pass yang cocok dengan filter.
+                  </td>
+                </tr>
+              ) : (
+                filteredGatePasses.map((gp) => {
+                  const statusUpper = String(gp.status || '').toUpperCase();
+                  const isExpired = gp.valid_until && new Date(gp.valid_until) < new Date();
+                  return (
+                    <tr key={gp.id} className="hover:bg-slate-50/80 transition">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900">
+                        {gp.pass_code}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-mono text-slate-800">{gp.reference_resi || '-'}</span>
+                        <span className="block text-[10px] text-slate-400">{gp.order_type || 'OUTBOUND'}</span>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <span className="font-semibold text-slate-800 truncate block max-w-xs">
+                          {gp.customer_or_destination || 'Tujuan Terdaftar'}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{gp.courier || 'Kurir Ekspedisi'}</span>
+                      </td>
+                      <td className="py-3.5 px-4 text-[11px] text-slate-500 font-mono">
+                        {gp.valid_until ? new Date(gp.valid_until).toLocaleString('id-ID') : '-'}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span
+                          className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            statusUpper === 'ACTIVE'
+                              ? isExpired
+                                ? 'bg-rose-100 text-rose-700 border border-rose-200'
+                                : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : statusUpper === 'USED'
+                              ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                              : 'bg-rose-100 text-rose-700 border border-rose-200'
+                          }`}
+                        >
+                          {statusUpper === 'ACTIVE' && isExpired ? 'EXPIRED' : statusUpper}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right space-x-1.5 shrink-0">
+                        <button
+                          onClick={() => {
+                            setInputCode(gp.pass_code);
+                            handleVerifyPass(gp.pass_code);
+                            window.scrollTo({ top: 180, behavior: 'smooth' });
+                          }}
+                          className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold transition"
+                          title="Periksa di terminal scanner"
+                        >
+                          Verifikasi
+                        </button>
+                        <button
+                          onClick={() => setSelectedPassForPrint(gp)}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
+                          title="Tinjau & Cetak Pas Jalan"
+                        >
+                          🖨️ Cetak
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* ================= LIVE GATE EVENTS FEED ================= */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-6">
+        <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
+          <div className="flex items-center space-x-2">
+            <span className="text-lg">📡</span>
+            <h3 className="text-sm font-bold text-slate-900 tracking-wide uppercase">
+              Log Lintasan Pembaca Portal Gerbang RFID (Live Feed)
+            </h3>
+          </div>
+          <span className="text-[11px] text-slate-400">Menampilkan 10 lintasan terakhir</span>
+        </div>
+
+        <div className="space-y-2.5">
+          {gateEvents.length === 0 ? (
+            <p className="text-xs text-slate-400 py-3 text-center">Belum ada riwayat lintasan di gerbang.</p>
+          ) : (
+            gateEvents.map((evt) => {
+              const isBreach = evt.authorization_status === 'UNAUTHORIZED';
+              return (
+                <div
+                  key={evt.id}
+                  className={`p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs ${
+                    isBreach
+                      ? 'bg-rose-50 border-rose-200 text-rose-900'
+                      : 'bg-slate-50 border-slate-200 text-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3">
+                    <span className="text-base">{isBreach ? '🚨' : '🟢'}</span>
+                    <div>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-mono font-bold">{evt.epc || 'ALL_ITEMS'}</span>
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                            isBreach ? 'bg-rose-200 text-rose-900' : 'bg-emerald-100 text-emerald-800'
+                          }`}
+                        >
+                          {evt.authorization_status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        {evt.item_name || 'Muatan Barang'} • {evt.action_taken}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="text-right text-[11px] text-slate-400 font-mono shrink-0">
+                    <span>{evt.event_time ? new Date(evt.event_time).toLocaleTimeString('id-ID') : '-'}</span>
+                    <span className="block text-[10px] text-slate-500">{evt.antenna_info || 'Antena 1 & 2'}</span>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* ================= MODAL CETAK GATE PASS (OFFICIAL) ================= */}
+      {selectedPassForPrint && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <span>🛡️</span>
+                <span className="font-extrabold text-sm tracking-wide">DIGI WMS OFFICIAL GATE PASS</span>
+              </div>
+              <button
+                onClick={() => setSelectedPassForPrint(null)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Document Body (Printable Paper Look) */}
+            <div className="p-6 bg-slate-50/50 space-y-4">
+              <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+                <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                  <div>
+                    <h4 className="font-black text-lg text-slate-900">SURAT IZIN KELUAR GERBANG</h4>
+                    <span className="text-[11px] text-blue-600 font-bold uppercase tracking-wider">
+                      Warehouse Outbound Authorization Pass
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-1 rounded-full text-xs font-black uppercase ${
+                      selectedPassForPrint.status === 'ACTIVE'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {selectedPassForPrint.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Nomor Pas Jalan</span>
+                    <p className="font-mono font-black text-base text-slate-900 mt-0.5">
+                      {selectedPassForPrint.pass_code}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Dokumen Resi / Invoice</span>
+                    <p className="font-mono font-bold text-sm text-slate-800 mt-0.5">
+                      {selectedPassForPrint.reference_resi || '-'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Tujuan / Penerima</span>
+                    <p className="font-semibold text-slate-800 mt-0.5">
+                      {selectedPassForPrint.customer_or_destination || 'Pelanggan'}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Kurir / Ekspedisi</span>
+                    <p className="font-semibold text-slate-800 mt-0.5">
+                      {selectedPassForPrint.courier || 'Kurir Outbound'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-100 rounded-xl text-center space-y-1">
+                  <span className="font-mono text-sm tracking-widest font-black text-slate-800 block">
+                    ||||| | |||| |||||| |||| | |||||||| ||||
+                  </span>
+                  <span className="text-[10px] font-mono text-slate-500">
+                    *{selectedPassForPrint.pass_code}*
+                  </span>
+                </div>
+
+                <div className="text-[10px] text-slate-400 text-center border-t border-slate-100 pt-3">
+                  Wajib ditunjukkan kepada petugas satpam gerbang sebelum armada logistik meninggalkan area gudang.
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="px-6 py-4 bg-white border-t border-slate-200 flex justify-end space-x-3">
+              <button
+                onClick={() => setSelectedPassForPrint(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+              >
+                Tutup
+              </button>
+              <button
+                onClick={() => window.print()}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-blue-600/30 transition flex items-center space-x-1.5"
+              >
+                <span>🖨️</span>
+                <span>Cetak / Cetak PDF</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL GENERATE GATE PASS MANUAL ================= */}
+      {showGenerateModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <span>➕</span>
+                <span className="font-extrabold text-sm tracking-wide">Terbitkan Gate Pass Baru</span>
+              </div>
+              <button
+                onClick={() => setShowGenerateModal(false)}
+                className="text-slate-400 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleGenerateGatePass} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nomor Resi / Dokumen Referensi *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="cth: JX-9920-1182 atau INV-POS-9001"
+                  value={generateForm.reference_resi}
+                  onChange={(e) => setGenerateForm({ ...generateForm, reference_resi: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Tipe Transaksi</label>
+                  <select
+                    value={generateForm.reference_type}
+                    onChange={(e) => setGenerateForm({ ...generateForm, reference_type: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
+                  >
+                    <option value="OUTBOUND_SHIPMENT">Pengiriman Ekspedisi</option>
+                    <option value="POS_SALE">Penjualan Kasir (POS)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Kurir / Armada</label>
+                  <input
+                    type="text"
+                    placeholder="cth: SiCepat, JNE"
+                    value={generateForm.courier}
+                    onChange={(e) => setGenerateForm({ ...generateForm, courier: e.target.value })}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Tujuan / Nama Pelanggan</label>
+                <input
+                  type="text"
+                  placeholder="cth: Surabaya Hub / Toko Elektronik"
+                  value={generateForm.customer_or_destination}
+                  onChange={(e) => setGenerateForm({ ...generateForm, customer_or_destination: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Daftar Tag RFID EPC (Pisahkan Koma, Opsional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="E28011602000042E, E28011602000055F"
+                  value={generateForm.epc_list}
+                  onChange={(e) => setGenerateForm({ ...generateForm, epc_list: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Masa Berlaku (Jam)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="168"
+                  value={generateForm.valid_hours}
+                  onChange={(e) => setGenerateForm({ ...generateForm, valid_hours: e.target.value })}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowGenerateModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={generating}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-blue-600/30 transition"
+                >
+                  {generating ? 'Menerbitkan...' : 'Terbitkan Pas'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

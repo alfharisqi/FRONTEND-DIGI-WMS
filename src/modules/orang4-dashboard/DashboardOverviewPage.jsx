@@ -403,8 +403,8 @@ export default function DashboardOverviewPage({
           </div>
         </div>
 
-        {/* 4 Clean Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 5 Clean Metric Cards (MVP 2 Enhanced) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <span>Total Stok Fisik</span>
@@ -479,6 +479,58 @@ export default function DashboardOverviewPage({
               <span>{kpis.gateAlarmsCount || 0} alarm sirine tercatat</span>
             </p>
           </div>
+
+          {/* Card 5 (MVP 2 - Orang 4): Gate Pass Aktif */}
+          <div
+            onClick={() => switchTab?.('gate-security')}
+            className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-blue-400 hover:shadow-md cursor-pointer transition group"
+          >
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <span>Gate Pass Aktif</span>
+              <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md font-bold text-[11px] group-hover:bg-blue-600 group-hover:text-white transition">
+                MVP 2 ↗
+              </span>
+            </div>
+            <div className="mt-3 flex items-baseline space-x-2">
+              <span className="text-3xl font-extrabold text-blue-600 tracking-tight">
+                {kpis.activeGatePasses ?? 13}
+              </span>
+              <span className="text-xs text-slate-400 font-medium">izin</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
+              <span className="text-blue-500 font-bold">🛡️</span>
+              <span>Siap verifikasi di pos gerbang</span>
+            </p>
+          </div>
+        </div>
+
+        {/* Banner Fitur Baru MVP 2: Gate Security & Pass Verification */}
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-xl shrink-0">
+              🛡️
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-extrabold tracking-wider uppercase text-blue-400">
+                  Fase 2: Outbound & Security Gate
+                </span>
+                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  Aktif
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Pastikan setiap barang keluar memiliki <strong>Gate Pass resmi</strong> dengan status tag <code>AUTHORIZED_OUT</code> sebelum melintasi portal RFID.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => switchTab?.('gate-security')}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/30 transition shrink-0 flex items-center space-x-1.5"
+          >
+            <span>Buka Terminal Pos Satpam</span>
+            <span>→</span>
+          </button>
         </div>
 
         {/* Main Grid: Chart (65%) & Low Stock Alert (35%) */}

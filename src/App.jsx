@@ -7,6 +7,7 @@ import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
+import GateSecurityPage from './modules/orang4-dashboard/GateSecurityPage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -212,6 +213,19 @@ export default function App() {
       );
     }
 
+    // Modul Orang 4 - Fase 2: Gate Pass Security Engine & Outbound Gate
+    if (['gate-security', 'gate-pass'].includes(activeTab)) {
+      return (
+        <GateSecurityPage
+          switchTab={switchTab}
+          lastEvent={lastEvent}
+          mqttConnected={mqttConnected}
+          currentUser={currentUser}
+          showNotification={showNotification}
+        />
+      );
+    }
+
     // 2. Modul Orang 1 (Penerimaan Inbound GRN, Stok Barang, Tag & Encoding RFID)
     if (['penerimaan', 'stok', 'rfid-tag'].includes(activeTab)) {
       return (
@@ -391,6 +405,14 @@ export default function App() {
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mt-5 mb-1 pt-3">
             Sistem & Analitik
           </p>
+
+          <button onClick={() => switchTab('gate-security')} className={navClass('gate-security')}>
+            <span>🛡️</span>
+            <span>Keamanan Gerbang & Pass</span>
+            <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
+              MVP 2
+            </span>
+          </button>
 
           {isAdminOrSupervisor && (
             <button onClick={() => switchTab('users')} className={navClass('users')}>
