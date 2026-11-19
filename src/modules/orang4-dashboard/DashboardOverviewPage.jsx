@@ -433,7 +433,7 @@ export default function DashboardOverviewPage({
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
               <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {kpis.totalInbound || 320}
+                {kpis.totalInbound ?? 0}
               </span>
               <span className="text-xs text-slate-400 font-medium">unit</span>
             </div>
@@ -452,7 +452,7 @@ export default function DashboardOverviewPage({
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
               <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {kpis.activeRfidTags}
+                {kpis.activeRfidTags ?? 0}
               </span>
               <span className="text-xs text-slate-400 font-medium">chip</span>
             </div>
@@ -465,18 +465,30 @@ export default function DashboardOverviewPage({
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <span>Keamanan Gerbang</span>
-              <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                Portal Standby
+              <span
+                className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                  (kpis.gateAlarmsCount || 0) > 0
+                    ? 'text-rose-700 bg-rose-50'
+                    : 'text-emerald-700 bg-emerald-50'
+                }`}
+              >
+                {(kpis.gateAlarmsCount || 0) > 0 ? 'Alarm Aktif' : 'Portal Standby'}
               </span>
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
-              <span className="text-2xl font-extrabold text-emerald-600 tracking-tight">
-                TERLINDUNGI
+              <span
+                className={`text-2xl font-extrabold tracking-tight ${
+                  (kpis.gateAlarmsCount || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'
+                }`}
+              >
+                {(kpis.gateAlarmsCount || 0) > 0 ? 'WASPADA' : 'TERLINDUNGI'}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
-              <span className="text-emerald-500 font-bold">✓</span>
-              <span>{kpis.gateAlarmsCount || 0} alarm sirine tercatat</span>
+              <span className={(kpis.gateAlarmsCount || 0) > 0 ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold'}>
+                {(kpis.gateAlarmsCount || 0) > 0 ? '🚨' : '✓'}
+              </span>
+              <span>{kpis.gateAlarmsCount ?? 0} alarm aktif di database</span>
             </p>
           </div>
 
@@ -493,7 +505,7 @@ export default function DashboardOverviewPage({
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
               <span className="text-3xl font-extrabold text-blue-600 tracking-tight">
-                {kpis.activeGatePasses ?? 13}
+                {kpis.activeGatePasses ?? 0}
               </span>
               <span className="text-xs text-slate-400 font-medium">izin</span>
             </div>

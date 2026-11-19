@@ -257,9 +257,12 @@ export default function GateSecurityPage({
     return true;
   });
 
-  // Hitung Metrik Ringkas
+  // Hitung Metrik Ringkas (100% Real dari Database)
   const totalActive = gatePasses.filter((g) => String(g.status).toUpperCase() === 'ACTIVE').length;
   const totalUsed = gatePasses.filter((g) => String(g.status).toUpperCase() === 'USED').length;
+  const totalUnauthorized = gateEvents.filter(
+    (e) => String(e.authorization_status).toUpperCase() === 'UNAUTHORIZED'
+  ).length;
 
   return (
     <div className="space-y-6">
@@ -339,16 +342,38 @@ export default function GateSecurityPage({
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+        <div
+          className={`p-5 rounded-2xl border shadow-sm flex items-center justify-between ${
+            totalUnauthorized > 0
+              ? 'bg-rose-50/70 border-rose-200'
+              : 'bg-white border-slate-200/80'
+          }`}
+        >
           <div>
             <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status Portal Keamanan</span>
             <div className="mt-1 flex items-baseline space-x-2">
-              <span className="text-base font-bold text-slate-900">SIAGA NORMAL</span>
-              <span className="text-xs text-emerald-600 font-semibold">• 100% Aman</span>
+              <span
+                className={`text-base font-bold ${
+                  totalUnauthorized > 0 ? 'text-rose-700' : 'text-slate-900'
+                }`}
+              >
+                {totalUnauthorized > 0 ? 'WASPADA BREACH' : 'SIAGA NORMAL'}
+              </span>
+              <span
+                className={`text-xs font-semibold ${
+                  totalUnauthorized > 0 ? 'text-rose-600' : 'text-emerald-600'
+                }`}
+              >
+                {totalUnauthorized > 0 ? `• ${totalUnauthorized} Insiden` : '• 100% Aman'}
+              </span>
             </div>
           </div>
-          <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-2xl text-blue-600">
-            🛡️
+          <div
+            className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl ${
+              totalUnauthorized > 0 ? 'bg-rose-100 text-rose-600' : 'bg-blue-50 text-blue-600'
+            }`}
+          >
+            {totalUnauthorized > 0 ? '🚨' : '🛡️'}
           </div>
         </div>
       </div>
