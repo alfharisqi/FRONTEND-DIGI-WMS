@@ -15,6 +15,8 @@ export default function StockOpnamePage({
   const [sessionId, setSessionId] = useState(null);
   const [sessionCode, setSessionCode] = useState(null);
   const [auditResult, setAuditResult] = useState(null);
+  const [sessions, setSessions] = useState([]);
+  const [selectedApprovalSession, setSelectedApprovalSession] = useState(null);
 
   // Gate Alarm State (Persis Template Awal digiwms.html)
   const [gateStatus, setGateStatus] = useState('AMAN'); // 'AMAN' | 'ALARM' | 'CROSSREAD'
@@ -53,7 +55,22 @@ const fetchProducts = async () => {
   }
 };
 
+const fetchSessions = async () => {
+  try {
+    const json = await apiRequest('/api/stocktake/sessions');
 
+    const sessionData = Array.isArray(json.data)
+      ? json.data
+      : [];
+
+    setSessions(sessionData);
+
+    console.log('Daftar sesi Stock Opname:', sessionData);
+  } catch (err) {
+    console.error('Error loading Stock Opname sessions:', err);
+    showNotification?.(err.message, 'error');
+  }
+};
 
 const buildDiscrepancyTable = (auditData) => {
   if (!auditData) return;
@@ -119,10 +136,39 @@ const misplacedRows = discrepancies
   setDiscrepancyRows([...rows, ...misplacedRows]);
 };
 
+// Memilih sesi Stock Opname dari riwayat
+const handleSelectApprovalSession = (session) => {
+  if (!session) return;
 
+  setSelectedApprovalSession(session);
+
+  const snapshot = session.audit_snapshot;
+
+  if (!snapshot) {
+    showNotification?.(
+      'Data audit sesi tidak ditemukan.',
+      'error'
+    );
+    return;
+  }
+
+  // Menampilkan hasil audit berdasarkan sesi yang dipilih
+  buildDiscrepancyTable({
+    ...snapshot,
+    discrepancies: session.discrepancies || [],
+  });
+
+  console.log('Sesi yang dipilih untuk persetujuan:', session);
+};
   useEffect(() => {
-    fetchProducts();
-  }, [lastEvent]);
+  fetchProducts();
+}, [lastEvent]);
+
+useEffect(() => {
+  if (activeMenu === 'rfid-opname') {
+    fetchSessions();
+  }
+}, [activeMenu, lastEvent]);
 
   // Web Audio Siren Sound Effect
   const playSirenBeep = () => {
@@ -259,10 +305,21 @@ buildDiscrepancyTable(result);
 
   
 const handleApproveAdjustment = async () => {
-  if (!sessionCode) {
-    showNotification?.('Kode sesi opname tidak ditemukan.', 'error');
-    return;
-  }
+  if (!selectedApprovalSession?.session_code) {
+  showNotification?.(
+    'Pilih sesi Stock Opname terlebih dahulu.',
+    'error'
+  );
+  return;
+}
+
+if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
+  showNotification?.(
+    'Sesi ini tidak sedang menunggu persetujuan.',
+    'error'
+  );
+  return;
+}
 
   const adjustments = discrepancyRows
     .filter(
@@ -281,7 +338,7 @@ const handleApproveAdjustment = async () => {
     const result = await apiRequest('/api/stocktake/approve', {
       method: 'POST',
       body: JSON.stringify({
-        session_code: sessionCode,
+        session_code: selectedApprovalSession.session_code,
         adjustments,
       }),
     });
@@ -295,7 +352,10 @@ const handleApproveAdjustment = async () => {
 
     console.log('Hasil persetujuan Stock Opname:', result);
 
-    fetchProducts();
+    await fetchProducts();
+    await fetchSessions();
+    setSelectedApprovalSession(null);
+    setDiscrepancyRows([]);
   } catch (err) {
     console.error('Gagal menyetujui Stock Opname:', err);
 
@@ -478,6 +538,79 @@ const handleApproveAdjustment = async () => {
             </div>
           </div>
         )}
+
+
+{/* Daftar Sesi Stock Opname */}
+<div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+  <div className="p-5 border-b border-slate-200">
+    <h3 className="font-bold text-slate-900">
+      Riwayat Sesi Stock Opname
+    </h3>
+    <p className="text-xs text-slate-500 mt-1">
+      Pilih sesi yang menunggu persetujuan supervisor.
+    </p>
+  </div>
+
+  <div className="divide-y divide-slate-100">
+    {sessions.filter(
+      (session) =>
+        session.status === 'COMPLETED_PENDING_APPROVAL'
+    ).length === 0 ? (
+      <div className="p-5 text-sm text-slate-500 text-center">
+        Tidak ada sesi yang menunggu persetujuan.
+      </div>
+    ) : (
+      sessions
+        .filter(
+          (session) =>
+            session.status === 'COMPLETED_PENDING_APPROVAL'
+        )
+        .map((session) => (
+          <div
+            key={session.id}
+            className="p-4 flex flex-col sm:flex-row justify-between gap-3"
+          >
+            <div>
+              <p className="font-bold text-sm text-slate-900">
+                {session.session_code}
+              </p>
+
+              <p className="text-xs text-slate-500 mt-1">
+                Zona {session.zone_code} ·{' '}
+                {new Date(session.created_at).toLocaleString('id-ID')}
+              </p>
+
+              <p className="text-xs text-slate-600 mt-2">
+                Matched: {session.matched_count || 0} ·
+                Missing: {session.missing_count || 0} ·
+                Salah Zona: {session.misplaced_count || 0}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs px-2 py-1 rounded-lg bg-amber-50 text-amber-700 font-semibold">
+                Menunggu Persetujuan
+              </span>
+
+              <button
+                onClick={() => handleSelectApprovalSession(session)}
+                className={`px-4 py-2 rounded-lg text-xs font-semibold ${
+                  selectedApprovalSession?.id === session.id
+                    ? 'bg-blue-700 text-white'
+                    : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                }`}
+              >
+                {selectedApprovalSession?.id === session.id
+                  ? 'Sesi Dipilih'
+                  : 'Lihat Hasil'}
+              </button>
+            </div>
+          </div>
+        ))
+    )}
+  </div>
+</div>
+
 
         {/* Opname Discrepancy Results Table */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
