@@ -44,3 +44,209 @@ body {
 .animate-strobe-green {
   animation: strobeGreen 1s infinite alternate;
 }
+
+/* ==========================================================================
+   DRIVER.JS INTERACTIVE GUIDEBOOK POPOVER THEME (LIGHT & DARK MODE)
+   Design System: Inter, Rounded-2xl (16px), Blue-600 Accent, Slate Palette
+   ========================================================================== */
+.driver-popover.app-guidebook-popover {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: #ffffff;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 20px;
+  max-width: 380px;
+  box-shadow:
+    0 20px 25px -5px rgba(15, 23, 42, 0.16),
+    0 8px 10px -6px rgba(15, 23, 42, 0.08),
+    0 0 0 1px rgba(37, 99, 235, 0.08);
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-title {
+  font-family: 'Inter', sans-serif;
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1.35;
+  color: #0f172a;
+  margin-bottom: 6px;
+  padding-right: 24px;
+  letter-spacing: -0.01em;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-description {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  color: #475569;
+  margin-bottom: 14px;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-close-btn {
+  color: #94a3b8;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  top: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-close-btn:hover {
+  background-color: #f1f5f9;
+  color: #0f172a;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-progress-text {
+  font-family: 'Inter', sans-serif;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #2563eb;
+  background-color: #eff6ff;
+  border: 1px solid #dbeafe;
+  padding: 4px 10px;
+  border-radius: 9999px;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-navigation-btns {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-prev-btn {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.78rem !important;
+  font-weight: 600 !important;
+  color: #475569 !important;
+  background-color: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 10px !important;
+  padding: 6px 12px !important;
+  text-shadow: none !important;
+  transition: all 0.15s ease !important;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-prev-btn:hover {
+  background-color: #f1f5f9 !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-next-btn,
+.driver-popover.app-guidebook-popover .driver-popover-done-btn {
+  font-family: 'Inter', sans-serif !important;
+  font-size: 0.78rem !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+  border: 1px solid #1d4ed8 !important;
+  border-radius: 10px !important;
+  padding: 6px 14px !important;
+  text-shadow: none !important;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25) !important;
+  transition: all 0.15s ease !important;
+}
+
+.driver-popover.app-guidebook-popover .driver-popover-next-btn:hover,
+.driver-popover.app-guidebook-popover .driver-popover-done-btn:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.35) !important;
+}
+
+/* Popover Arrow Colors — Light Mode */
+.driver-popover.app-guidebook-popover .driver-popover-arrow-side-left.driver-popover-arrow {
+  border-left-color: #ffffff;
+}
+.driver-popover.app-guidebook-popover .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-right-color: #ffffff;
+}
+.driver-popover.app-guidebook-popover .driver-popover-arrow-side-top.driver-popover-arrow {
+  border-top-color: #ffffff;
+}
+.driver-popover.app-guidebook-popover .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: #ffffff;
+}
+
+/* Dark Mode Support (.dark or [data-theme="dark"]) */
+.dark .driver-popover.app-guidebook-popover,
+[data-theme="dark"] .driver-popover.app-guidebook-popover {
+  background-color: #0f172a;
+  color: #f8fafc;
+  border-color: #1e293b;
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(59, 130, 246, 0.25);
+}
+
+.dark .driver-popover.app-guidebook-popover .driver-popover-title,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-title {
+  color: #f8fafc;
+}
+
+.dark .driver-popover.app-guidebook-popover .driver-popover-description,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-description {
+  color: #cbd5e1;
+}
+
+.dark .driver-popover.app-guidebook-popover .driver-popover-close-btn:hover,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-close-btn:hover {
+  background-color: #1e293b;
+  color: #f8fafc;
+}
+
+.dark .driver-popover.app-guidebook-popover .driver-popover-footer,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-footer {
+  border-top-color: #1e293b;
+}
+
+.dark .driver-popover.app-guidebook-popover .driver-popover-progress-text,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-progress-text {
+  color: #60a5fa;
+  background-color: rgba(37, 99, 235, 0.15);
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+.dark .driver-popover.app-guidebook-popover .driver-popover-prev-btn,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-prev-btn {
+  color: #cbd5e1 !important;
+  background-color: #1e293b !important;
+  border-color: #334155 !important;
+}
+
+.dark .driver-popover.app-guidebook-popover .driver-popover-prev-btn:hover,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-prev-btn:hover {
+  background-color: #334155 !important;
+  color: #ffffff !important;
+}
+
+/* Popover Arrow Colors — Dark Mode */
+.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-left.driver-popover-arrow,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-left.driver-popover-arrow {
+  border-left-color: #0f172a;
+}
+.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-right.driver-popover-arrow,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-right.driver-popover-arrow {
+  border-right-color: #0f172a;
+}
+.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-top.driver-popover-arrow,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-top.driver-popover-arrow {
+  border-top-color: #0f172a;
+}
+.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-bottom.driver-popover-arrow,
+[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-bottom.driver-popover-arrow {
+  border-bottom-color: #0f172a;
+}

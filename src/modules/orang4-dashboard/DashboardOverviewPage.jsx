@@ -364,7 +364,10 @@ export default function DashboardOverviewPage({
     return (
       <div className="space-y-6">
         {/* Compact Clean Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+        <div
+          data-tour="dashboard-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm"
+        >
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
@@ -404,7 +407,10 @@ export default function DashboardOverviewPage({
         </div>
 
         {/* 5 Clean Metric Cards (MVP 2 Enhanced) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div
+          data-tour="dashboard-kpi-cards"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
+        >
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <span>Total Stok Fisik</span>
@@ -517,7 +523,10 @@ export default function DashboardOverviewPage({
         </div>
 
         {/* Banner Fitur Baru MVP 2: Gate Security & Pass Verification */}
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div
+          data-tour="dashboard-gate-banner"
+          className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        >
           <div className="flex items-center space-x-3.5">
             <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-xl shrink-0">
               🛡️
@@ -546,7 +555,7 @@ export default function DashboardOverviewPage({
         </div>
 
         {/* Main Grid: Chart (65%) & Low Stock Alert (35%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div data-tour="dashboard-analytics-grid" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Sisi Kiri: Grafik Tren Mutasi Stok Ramping */}
           <div className="lg:col-span-2 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between mb-4">

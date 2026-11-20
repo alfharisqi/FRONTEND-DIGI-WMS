@@ -267,7 +267,10 @@ export default function InventoryLedgerPage({
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div
+          data-tour="inventory-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+        >
           <div>
             <h2 className="text-xl font-bold text-slate-900">Peta & Zona Lokasi Rak Gudang</h2>
             <p className="text-xs text-slate-500 mt-1">
@@ -288,7 +291,10 @@ export default function InventoryLedgerPage({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div
+          data-tour="inventory-main-section"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+        >
           {rackLocations.map((loc) => {
             const capacity = Number(loc.max_capacity || 0);
             const occupied = Number(loc.current_items_count || 0);
@@ -500,7 +506,10 @@ export default function InventoryLedgerPage({
   if (activeMenu === 'picking') {
     return (
       <div className="space-y-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div
+          data-tour="inventory-header"
+          className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+        >
           <div>
             <h2 className="text-xl font-bold text-slate-900">Picking & Packing Pesanan</h2>
             <p className="text-xs text-slate-500 mt-1">
@@ -518,7 +527,7 @@ export default function InventoryLedgerPage({
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div data-tour="inventory-main-section" className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg">
@@ -633,7 +642,10 @@ export default function InventoryLedgerPage({
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div
+          data-tour="inventory-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+        >
           <div>
             <h2 className="text-xl font-bold text-slate-900">
               Manajemen Pengiriman & Gate Pass (Outbound)
@@ -651,7 +663,10 @@ export default function InventoryLedgerPage({
           </button>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          data-tour="inventory-main-section"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+        >
           <div className="p-4 border-b border-slate-200">
             <input
               type="text"
@@ -803,7 +818,10 @@ export default function InventoryLedgerPage({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div
+        data-tour="inventory-header"
+        className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+      >
         <div>
           <div className="flex items-center space-x-2">
             <h2 className="text-xl font-bold text-slate-900">
@@ -827,7 +845,10 @@ export default function InventoryLedgerPage({
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div
+        data-tour="inventory-main-section"
+        className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+      >
         <div className="p-4 border-b border-slate-200 flex justify-between gap-3">
           <input
             type="text"

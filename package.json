@@ -11,6 +11,7 @@
     "test:orang1": "node --test tests/orang1-api.test.mjs"
   },
   "dependencies": {
+    "driver.js": "^1.14.0",
     "lucide-react": "^0.400.0",
     "mqtt": "^5.7.0",
     "react": "^18.3.1",

@@ -267,7 +267,10 @@ export default function GateSecurityPage({
   return (
     <div className="space-y-6">
       {/* ================= HEADER SECTION ================= */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+      <div
+        data-tour="gate-security-header"
+        className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm"
+      >
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
@@ -379,7 +382,10 @@ export default function GateSecurityPage({
       </div>
 
       {/* ================= CORE VERIFICATION SCANNER ================= */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+      <div
+        data-tour="gate-security-scanner"
+        className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden"
+      >
         <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-2.5">
             <span className="text-xl">🔍</span>
@@ -542,7 +548,10 @@ export default function GateSecurityPage({
       </div>
 
       {/* ================= TABEL RIWAYAT GATE PASS ================= */}
-      <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+      <div
+        data-tour="gate-security-list"
+        className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden"
+      >
         {/* Table Header & Controls */}
         <div className="p-5 border-b border-slate-200/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex flex-wrap items-center gap-2">
