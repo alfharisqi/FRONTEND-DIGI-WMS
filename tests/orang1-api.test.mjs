@@ -1,10 +1,33 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
-const result = await build({ entryPoints: ['src/modules/orang1-inbound/api.js'], bundle: true, write: false, format: 'esm', define: { 'import.meta.env.VITE_API_URL': JSON.stringify('http://test.local/api') } });
+const result = await build({ entryPoints: ['src/modules/orang1-inbound/api.js'], bundle: true, write: false, format: 'esm', define: {
+  'import.meta.env.VITE_API_URL': JSON.stringify('http://test.local/api'),
+  'import.meta.env.VITE_DIGIWMS_LOCAL_DEV': JSON.stringify('true'),
+} });
 const api = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+Object.defineProperty(globalThis, 'localStorage', { value: { getItem: () => null }, configurable: true });
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
+test('Inbound sends the same scoped Bearer token as Picking', async t => {
+  t.mock.method(globalThis.localStorage, 'getItem', key => {
+    assert.equal(key, 'digiwms_dev_token'); return 'jwt-fixture';
+  });
+  globalThis.fetch = async (_, options) => {
+    assert.equal(options.headers.Authorization, 'Bearer jwt-fixture');
+    return Response.json({ success: true, data: {} });
+  };
+  await api.inboundRequest('/inbound/grn', 'POST', {});
+});
+test('Receipt lines retain product IDs and reject duplicates or fractional quantities', () => {
+  const id = '18b635db-0ec3-41b1-a1ec-e15da1438ce2';
+  const products = [{ id }, { id: 2 }];
+  const row = { product_id: id, received_qty: '3' };
+  assert.deepEqual(api.receivedLines(products, [row, { product_id: '2', received_qty: '2' }]),
+    [{ product_id: id, received_qty: 3 }, { product_id: 2, received_qty: 2 }]);
+  assert.throws(() => api.receivedLines(products, [row, row]), /duplikat/);
+  assert.throws(() => api.receivedLines(products, [{ ...row, received_qty: '1.5' }]), /bilangan bulat/);
+});
 test('UUID from API select is retained without numeric conversion', async () => {
   const uuid = '18b635db-0ec3-41b1-a1ec-e15da1438ce2';
   const product_id = api.selectedProductId([{ id: uuid }], uuid);
