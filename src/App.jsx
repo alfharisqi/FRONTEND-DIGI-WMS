@@ -7,6 +7,9 @@ import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
+import GateSecurityPage from './modules/orang4-dashboard/GateSecurityPage';
+import GuidebookButton from './components/GuidebookButton';
+import { startInteractiveGuidebook } from './lib/guidebook';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -212,6 +215,19 @@ export default function App() {
       );
     }
 
+    // Modul Orang 4 - Fase 2: Gate Pass Security Engine & Outbound Gate
+    if (['gate-security', 'gate-pass'].includes(activeTab)) {
+      return (
+        <GateSecurityPage
+          switchTab={switchTab}
+          lastEvent={lastEvent}
+          mqttConnected={mqttConnected}
+          currentUser={currentUser}
+          showNotification={showNotification}
+        />
+      );
+    }
+
     // 2. Modul Orang 1 (Penerimaan Inbound GRN, Stok Barang, Tag & Encoding RFID)
     if (['penerimaan', 'stok', 'rfid-tag'].includes(activeTab)) {
       return (
@@ -306,7 +322,10 @@ export default function App() {
         </div>
 
         {/* Navigation Links */}
-        <nav className="flex-1 px-4 py-5 space-y-1 overflow-y-auto custom-scrollbar">
+        <nav
+          data-tour="sidebar-nav"
+          className="flex-1 px-4 py-5 space-y-1 overflow-y-auto custom-scrollbar"
+        >
           {/* Operasional Utama */}
           <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mb-1">
             Menu Utama
@@ -392,6 +411,14 @@ export default function App() {
             Sistem & Analitik
           </p>
 
+          <button onClick={() => switchTab('gate-security')} className={navClass('gate-security')}>
+            <span>🛡️</span>
+            <span>Keamanan Gerbang & Pass</span>
+            <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
+              MVP 2
+            </span>
+          </button>
+
           {isAdminOrSupervisor && (
             <button onClick={() => switchTab('users')} className={navClass('users')}>
               <span>👥</span>
@@ -413,10 +440,28 @@ export default function App() {
             <span>🖼️</span>
             <span>Flyer Promosi</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setSidebarOpen(false);
+              setTimeout(() => startInteractiveGuidebook(activeTab), 150);
+            }}
+            className="nav-item flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left text-cyan-300 hover:bg-slate-800 hover:text-white border border-cyan-500/20 bg-cyan-500/5 mt-2"
+          >
+            <span>📚</span>
+            <span>Tur Panduan Aplikasi</span>
+            <span className="ml-auto bg-cyan-500/20 text-cyan-300 text-[10px] px-2 py-0.5 rounded-full font-bold">
+              Guidebook
+            </span>
+          </button>
         </nav>
 
         {/* Sidebar Footer User Profile + Tombol Logout */}
-        <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex items-center space-x-3">
+        <div
+          data-tour="sidebar-user-profile"
+          className="p-4 bg-slate-950/60 border-t border-slate-800 flex items-center space-x-3"
+        >
           <img
             src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
             alt="User"
@@ -448,7 +493,7 @@ export default function App() {
               ☰
             </button>
 
-            <div className="relative max-w-md w-64 sm:w-80">
+            <div data-tour="global-search" className="relative max-w-md w-64 sm:w-80">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                 🔍
               </span>
@@ -462,7 +507,12 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          <div
+            data-tour="header-quick-actions"
+            className="flex items-center space-x-2 sm:space-x-3"
+          >
+            <GuidebookButton activeTab={activeTab} />
+
             <button
               onClick={() => switchTab('rfid-gate')}
               className="hidden sm:flex items-center space-x-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-sm transition-all"
@@ -516,7 +566,10 @@ export default function App() {
         </header>
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+        <div
+          data-tour="main-content-area"
+          className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar"
+        >
           {renderMainContent()}
         </div>
       </main>

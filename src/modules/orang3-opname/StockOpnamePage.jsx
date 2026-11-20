@@ -444,7 +444,10 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
   if (activeMenu === 'rfid-opname') {
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div
+          data-tour="opname-gate-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+        >
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-xl font-bold text-slate-900">
@@ -613,7 +616,10 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
 
 
         {/* Opname Discrepancy Results Table */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          data-tour="opname-gate-main"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+        >
           <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h3 className="font-bold text-slate-900 text-base">
@@ -696,7 +702,10 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
   // ============================================================================
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+      <div
+        data-tour="opname-gate-header"
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+      >
         <div>
           <div className="flex items-center space-x-2">
             <h2 className="text-xl font-bold text-slate-900">
@@ -729,6 +738,7 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
 
       {/* Interactive Gate Strobe Visualization Box */}
       <div
+        data-tour="opname-gate-main"
         className={`bg-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-2xl border-4 transition-all duration-300 relative overflow-hidden ${
           gateStatus === 'ALARM'
             ? 'border-rose-500 animate-strobe-red'
