@@ -5,7 +5,10 @@
   "description": "DIGI WMS React.js Frontend + EMQX MQTT over WebSocket (Port 8083)",
   "type": "module",
   "scripts": {
-    "dev": "vite --port 3000",
+    "dev": "node scripts/dev.mjs",
+    "dev:frontend": "node scripts/dev.mjs --frontend-only",
+    "dev:reset": "node scripts/dev.mjs --archive",
+    "dev:seed-packing": "node scripts/dev.mjs --seed-packing",
     "build": "vite build",
     "preview": "vite preview",
     "test:orang1": "node --test tests/orang1-api.test.mjs"
