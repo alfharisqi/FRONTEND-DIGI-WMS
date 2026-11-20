@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { API_BASE_URL } from '../../config/api';
+import { tokenStorageKey, userStorageKey } from '../../config/authSession';
 
 export default function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -22,8 +23,8 @@ export default function LoginPage({ onLoginSuccess }) {
       if (res.ok && (json.data?.user || json.user)) {
         const loggedUser = json.data?.user || json.user;
         const token = json.data?.token || json.token;
-        localStorage.setItem('digiwms_user', JSON.stringify(loggedUser));
-        localStorage.setItem('digiwms_token', token || '');
+        localStorage.setItem(userStorageKey, JSON.stringify(loggedUser));
+        localStorage.setItem(tokenStorageKey, token || '');
         onLoginSuccess(loggedUser);
       } else {
         setErrorMsg(json.message || 'Username atau password tidak valid!');

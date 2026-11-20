@@ -1,9 +1,15 @@
 import { API_BASE_URL } from '../../config/api';
+import { tokenStorageKey } from '../../config/authSession';
 
 export async function inboundRequest(path, method = 'GET', payload) {
+  const token = globalThis.localStorage?.getItem(tokenStorageKey);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
-    ...(payload === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }),
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(payload === undefined ? {} : { 'Content-Type': 'application/json' }),
+    },
+    ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
   });
   let json;
   try { json = await response.json(); }
@@ -25,6 +31,19 @@ export function selectedProductId(products, value) {
   const product = products.find(row => String(row.id) === String(value));
   if (!product) throw new Error('Pilih produk dari data API yang tersedia.');
   return product.id;
+}
+
+export function receivedLines(products, rows) {
+  if (!rows.length) throw new Error('Tambahkan minimal satu baris SKU.');
+  const lines = rows.map(row => {
+    const received_qty = Number(row.received_qty);
+    if (!Number.isInteger(received_qty) || received_qty < 1 || received_qty > 2147483647) {
+      throw new Error('Jumlah diterima harus bilangan bulat positif.');
+    }
+    return { product_id: selectedProductId(products, row.product_id), received_qty };
+  });
+  if (new Set(lines.map(line => String(line.product_id))).size !== lines.length) throw new Error('SKU tidak boleh duplikat.');
+  return lines;
 }
 
 const tagTypes = {
