@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { createMqttSubscription } from './config/mqttClient';
 import { API_BASE_URL } from './config/api';
+import { tokenStorageKey, userStorageKey } from './config/authSession';
 import DashboardOverviewPage from './modules/orang4-dashboard/DashboardOverviewPage';
 import LoginPage from './modules/orang4-dashboard/LoginPage';
 import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
+import { inboundRequest } from './modules/orang1-inbound/api';
+import PickingPackingPage from './modules/orang1-picking/PickingPackingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
@@ -21,7 +24,7 @@ export default function App() {
   // State User Aktif (RBAC Auth — dikelola oleh Orang 4 via Halaman Login Resmi)
   const [currentUser, setCurrentUser] = useState(() => {
     try {
-      const saved = localStorage.getItem('digiwms_user');
+      const saved = localStorage.getItem(userStorageKey);
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -90,8 +93,8 @@ export default function App() {
       // Abaikan jika offline
     }
 
-    localStorage.removeItem('digiwms_user');
-    localStorage.removeItem('digiwms_token');
+    localStorage.removeItem(userStorageKey);
+    localStorage.removeItem(tokenStorageKey);
     setCurrentUser(null);
   };
 
@@ -146,33 +149,19 @@ export default function App() {
   const handleQuickAddItem = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE_URL}/products`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(quickItem),
+      const data = await inboundRequest('/products', 'POST', quickItem);
+      showNotification('Barang berhasil ditambahkan!', 'success');
+      setShowQuickAddModal(false);
+      setQuickItem({
+        sku: '',
+        name: '',
+        category: 'Aksesoris Komputer',
+        price_idr: 350000,
+        min_stock: 20,
       });
-      const json = await res.json();
-
-      if (res.ok) {
-        showNotification(json.message || 'Barang berhasil ditambahkan!', 'success');
-        setShowQuickAddModal(false);
-        setQuickItem({
-          sku: '',
-          name: '',
-          category: 'Aksesoris Komputer',
-          price_idr: 350000,
-          min_stock: 20,
-        });
-        setLastEvent({
-          topic: 'digiwms/product/created',
-          payload: json.data,
-          receivedAt: new Date().toLocaleTimeString('id-ID'),
-        });
-      } else {
-        showNotification(json.message || 'Gagal menambah barang', 'error');
-      }
+      setLastEvent({ topic: 'digiwms/product/created', payload: data, receivedAt: new Date().toLocaleTimeString('id-ID') });
     } catch (err) {
-      console.error(err);
+      showNotification(err.message, 'error');
     }
   };
 
@@ -252,8 +241,12 @@ export default function App() {
       );
     }
 
-    // 3. Modul Orang 2 (Penyimpanan Rak, Picking & Packing, Pengiriman Outbound, Ledger Pergerakan)
-    if (['penyimpanan', 'picking', 'pengiriman', 'ledger'].includes(activeTab)) {
+    if (activeTab === 'picking') {
+      return <PickingPackingPage searchQuery={globalSearch} showNotification={showNotification} />;
+    }
+
+    // 3. Modul Orang 2 (Penyimpanan Rak, Pengiriman Outbound, Ledger Pergerakan)
+    if (['penyimpanan', 'pengiriman', 'ledger'].includes(activeTab)) {
       return (
         <InventoryLedgerPage
           activeMenu={activeTab}

@@ -1,4 +1,6 @@
 
+import { tokenStorageKey } from '../config/authSession';
+
 const configuredApiUrl =
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -21,7 +23,7 @@ export async function apiRequest(endpoint, options = {}) {
     : `/${endpoint}`;
 
   // Ambil token JWT dari localStorage.
-  const token = localStorage.getItem('digiwms_token');
+  const token = localStorage.getItem(tokenStorageKey);
 
   const response = await fetch(
     `${API_BASE_URL}${normalizedEndpoint}`,
