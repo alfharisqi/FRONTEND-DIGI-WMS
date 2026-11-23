@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { apiRequest } from '../../services/api';
+import { API_BASE_URL, apiRequest } from '../../services/api';
 
 export default function StockOpnamePage({
   activeMenu = 'rfid-opname',
