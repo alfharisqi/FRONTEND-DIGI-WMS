@@ -39,6 +39,11 @@ export default function GateSecurityPage({
   // State Alarm Darurat (Breach)
   const [simulatingBreach, setSimulatingBreach] = useState(false);
 
+  // State Modal Pembatalan Gate Pass (REVOKED)
+  const [passToCancel, setPassToCancel] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelling, setCancelling] = useState(false);
+
   // 1. Fetch Data Gate Passes & Gate Events
   const fetchData = async () => {
     try {
@@ -66,7 +71,11 @@ export default function GateSecurityPage({
 
   // Tangkap event real-time dari MQTT jika ada
   useEffect(() => {
-    if (lastEvent?.event === 'GATE_PASS_GENERATED' || lastEvent?.event === 'GATE_EXIT_CONFIRMED') {
+    if (
+      lastEvent?.event === 'GATE_PASS_GENERATED' ||
+      lastEvent?.event === 'GATE_EXIT_CONFIRMED' ||
+      lastEvent?.event === 'GATE_PASS_REVOKED'
+    ) {
       fetchData();
     }
     if (lastEvent?.event === 'SECURITY_BREACH_ALARM') {
@@ -150,6 +159,54 @@ export default function GateSecurityPage({
       showNotification?.('Terjadi kesalahan saat memproses scan out', 'error');
     } finally {
       setConfirmingExit(false);
+    }
+  };
+
+  // 3B. Handler Pembatalan Gate Pass (Status ACTIVE -> REVOKED)
+  const handleCancelGatePass = async (e) => {
+    e.preventDefault();
+    if (!passToCancel?.pass_code) return;
+    setCancelling(true);
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/gate-passes/${encodeURIComponent(passToCancel.pass_code)}/cancel`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            reason: cancelReason.trim() || 'Dibatalkan oleh petugas keamanan gerbang',
+            cancelled_by: currentUser?.full_name || 'Petugas Keamanan Gerbang',
+          }),
+        }
+      );
+
+      const json = await res.json();
+      if (res.ok) {
+        showNotification?.(
+          json.message || `Gate Pass ${passToCancel.pass_code} berhasil dibatalkan.`,
+          'warn'
+        );
+        if (verificationResult?.data?.pass_code === passToCancel.pass_code) {
+          setVerificationResult({
+            status: 'warn',
+            is_valid: false,
+            verification_status: 'REVOKED',
+            message: `PERINGATAN: Gate Pass ${passToCancel.pass_code} telah dibatalkan (REVOKED)! Izin keluar ditolak.`,
+            data: json.data,
+          });
+        }
+        setPassToCancel(null);
+        setCancelReason('');
+        fetchData();
+      } else {
+        showNotification?.(json.message || 'Gagal membatalkan Gate Pass', 'error');
+      }
+    } catch (err) {
+      console.error(err);
+      showNotification?.('Terjadi kesalahan jaringan saat membatalkan Gate Pass', 'error');
+    } finally {
+      setCancelling(false);
     }
   };
 
@@ -478,16 +535,29 @@ export default function GateSecurityPage({
                   </div>
                 </div>
 
-                {/* Tombol Konfirmasi Keluar (Jika Status Valid & Aktif) */}
+                {/* Tombol Konfirmasi Keluar / Batalkan (Jika Status Valid & Aktif) */}
                 {verificationResult.is_valid && verificationResult.verification_status === 'AUTHORIZED' && (
-                  <button
-                    onClick={() => handleConfirmExit(verificationResult.data?.pass_code)}
-                    disabled={confirmingExit}
-                    className="w-full lg:w-auto px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center space-x-2 shrink-0 animate-pulse"
-                  >
-                    <span>🚀</span>
-                    <span>{confirmingExit ? 'Menyimpan Konfirmasi...' : 'IZINKAN KELUAR & BUKA GERBANG'}</span>
-                  </button>
+                  <div className="w-full lg:w-auto flex flex-col sm:flex-row gap-2 shrink-0">
+                    <button
+                      onClick={() => handleConfirmExit(verificationResult.data?.pass_code)}
+                      disabled={confirmingExit}
+                      className="w-full sm:w-auto px-5 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-sm rounded-xl shadow-lg shadow-emerald-600/30 transition flex items-center justify-center space-x-2 shrink-0 animate-pulse"
+                    >
+                      <span>🚀</span>
+                      <span>{confirmingExit ? 'Menyimpan Konfirmasi...' : 'IZINKAN KELUAR & BUKA GERBANG'}</span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPassToCancel(verificationResult.data);
+                        setCancelReason('');
+                      }}
+                      className="w-full sm:w-auto px-4 py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center justify-center space-x-1.5 shrink-0"
+                      title="Batalkan / Cabut Izin Gate Pass ini"
+                    >
+                      <span>🚫</span>
+                      <span>Batalkan Izin</span>
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -556,7 +626,7 @@ export default function GateSecurityPage({
         <div className="p-5 border-b border-slate-200/80 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider mr-2">Filter:</span>
-            {['ALL', 'ACTIVE', 'USED', 'EXPIRED'].map((tab) => (
+            {['ALL', 'ACTIVE', 'USED', 'EXPIRED', 'REVOKED'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveFilter(tab)}
@@ -566,7 +636,15 @@ export default function GateSecurityPage({
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
-                {tab === 'ALL' ? 'Semua' : tab === 'ACTIVE' ? 'Aktif' : tab === 'USED' ? 'Digunakan' : 'Kadaluwarsa'}
+                {tab === 'ALL'
+                  ? 'Semua'
+                  : tab === 'ACTIVE'
+                  ? 'Aktif'
+                  : tab === 'USED'
+                  ? 'Digunakan'
+                  : tab === 'EXPIRED'
+                  ? 'Kadaluwarsa'
+                  : 'Dibatalkan'}
               </button>
             ))}
           </div>
@@ -643,7 +721,11 @@ export default function GateSecurityPage({
                               : 'bg-rose-100 text-rose-700 border border-rose-200'
                           }`}
                         >
-                          {statusUpper === 'ACTIVE' && isExpired ? 'EXPIRED' : statusUpper}
+                          {statusUpper === 'ACTIVE' && isExpired
+                            ? 'EXPIRED'
+                            : statusUpper === 'REVOKED'
+                            ? 'DIBATALKAN'
+                            : statusUpper}
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right space-x-1.5 shrink-0">
@@ -658,6 +740,18 @@ export default function GateSecurityPage({
                         >
                           Verifikasi
                         </button>
+                        {statusUpper === 'ACTIVE' && (
+                          <button
+                            onClick={() => {
+                              setPassToCancel(gp);
+                              setCancelReason('');
+                            }}
+                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg text-xs font-semibold transition"
+                            title="Batalkan / Cabut Gate Pass ini"
+                          >
+                            🚫 Batal
+                          </button>
+                        )}
                         <button
                           onClick={() => setSelectedPassForPrint(gp)}
                           className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
@@ -939,6 +1033,68 @@ export default function GateSecurityPage({
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-blue-600/30 transition"
                 >
                   {generating ? 'Menerbitkan...' : 'Terbitkan Pas'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= MODAL KONFIRMASI PEMBATALAN GATE PASS ================= */}
+      {passToCancel && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-rose-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 bg-rose-600 text-white flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <span>🚫</span>
+                <span className="font-extrabold text-sm tracking-wide">Batalkan Gate Pass (Revoke)</span>
+              </div>
+              <button
+                onClick={() => setPassToCancel(null)}
+                className="text-rose-100 hover:text-white text-lg font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCancelGatePass} className="p-6 space-y-4">
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 space-y-1">
+                <p className="font-bold">
+                  Anda akan mencabut izin keluar untuk Gate Pass:{' '}
+                  <span className="font-mono text-rose-700">{passToCancel.pass_code}</span>
+                </p>
+                <p className="text-[11px] text-rose-700">
+                  Status akan diubah menjadi <strong>REVOKED (Dibatalkan)</strong>. Setelah dibatalkan, pas jalan ini tidak dapat digunakan lagi untuk keluar gerbang.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Alasan Pembatalan (Opsional)
+                </label>
+                <textarea
+                  rows="3"
+                  placeholder="cth: Pengiriman dibatalkan, kesalahan nomor resi, atau muatan tidak sesuai..."
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-rose-500"
+                />
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setPassToCancel(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                >
+                  Kembali
+                </button>
+                <button
+                  type="submit"
+                  disabled={cancelling}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white text-xs font-extrabold rounded-xl shadow-md shadow-rose-600/30 transition"
+                >
+                  {cancelling ? 'Membatalkan...' : 'Ya, Batalkan Gate Pass'}
                 </button>
               </div>
             </form>
