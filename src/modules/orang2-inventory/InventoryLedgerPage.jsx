@@ -849,7 +849,7 @@ export default function InventoryLedgerPage({
                   className="text-slate-400 hover:text-slate-700 text-xl"
                   aria-label="Tutup modal"
                 >
-                  Ã—
+                  ×
                 </button>
               </div>
 
@@ -954,7 +954,7 @@ export default function InventoryLedgerPage({
               <option value="">Pilih rak tujuan</option>
               {rackLocations.map((l) => (
                 <option key={l.id || l.code} value={l.code}>
-                  {l.code} â€” {l.name}
+                  {l.code} - {l.name}
                 </option>
               ))}
             </select>
@@ -993,7 +993,6 @@ export default function InventoryLedgerPage({
             }
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
           >
-            <span>ðŸ“‹</span>
             <span>Buat Batch Picking</span>
           </button>
         </div>
@@ -1129,7 +1128,7 @@ export default function InventoryLedgerPage({
             onClick={() => setShowShippingModal(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
           >
-            <span>âž•</span>
+            <span>+</span>
             <span>Buat Pengiriman Baru</span>
           </button>
         </div>
@@ -1204,7 +1203,7 @@ export default function InventoryLedgerPage({
                   onClick={() => setShowShippingModal(false)}
                   className="text-slate-400 hover:text-slate-600 font-bold"
                 >
-                  âœ•
+                  ×
                 </button>
               </div>
               <form onSubmit={handleAddShipping} className="space-y-4">
@@ -1349,7 +1348,6 @@ export default function InventoryLedgerPage({
           onClick={handleExportLedger}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
         >
-          <span>ðŸ“¥</span>
           <span>Export Data Ledger</span>
         </button>
       </div>
