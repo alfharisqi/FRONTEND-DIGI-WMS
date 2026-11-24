@@ -39,9 +39,13 @@ import PickingPackingPage from './modules/orang1-picking/PickingPackingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
+
+import PosPage from './modules/orang3-opname/PosPage';
+import ReturnPage from './modules/orang3-opname/ReturnPage';
 import GateSecurityPage from './modules/orang4-dashboard/GateSecurityPage';
 import GuidebookButton from './components/GuidebookButton';
 import { startInteractiveGuidebook } from './lib/guidebook';
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -341,6 +345,16 @@ export default function App() {
       );
     }
 
+    // Modul Orang 3 - Kasir POS
+    if (activeTab === 'pos') {
+    return <PosPage />;
+    }
+
+    // Modul Orang 3 - Retur POS
+  if (activeTab === 'retur') {
+  return <ReturnPage showNotification={showNotification} />;
+  }
+
     return null;
   };
 
@@ -424,6 +438,26 @@ export default function App() {
           {/* RFID & Keamanan Core */}
           {renderSectionLabel('RFID & Gerbang')}
 
+          <button onClick={() => switchTab('pos')} className={navClass('pos')}>
+            <span>🛒</span>
+            <span>Kasir POS</span>
+            <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
+               POS
+           </span>
+          </button>
+
+          <button onClick={() => switchTab('retur')} className={navClass('retur')}>
+            <span>↩️</span>
+            <span>Retur POS</span>
+          </button>
+
+          <button onClick={() => switchTab('rfid-gate')} className={navClass('rfid-gate')}>
+            <span>🚨</span>
+            <span>Gate & Alarm Live</span>
+            <span className="ml-auto bg-rose-500/20 text-rose-400 text-[10px] px-2 py-0.5 rounded-full font-bold animate-pulse">
+              Relay
+            </span>
+          </button>
           {renderNavItem('rfid-tag', Tag, 'Tag & Encoding')}
           {renderNavItem('rfid-opname', Radio, 'Opname Handheld')}
           {renderNavItem('rfid-gate', Siren, 'Gate & Alarm Live')}

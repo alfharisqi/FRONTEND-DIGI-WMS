@@ -7,7 +7,9 @@ export default function StockOpnamePage({
   showNotification,
 }) {
   const [products, setProducts] = useState([]);
-  const [selectedZone, setSelectedZone] = useState('A1');
+  const [selectedZone, setSelectedZone] = useState('');
+  const [opnameZones, setOpnameZones] = useState([]);
+  const [zonesLoading, setZonesLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scannedCount, setScannedCount] = useState(0);
@@ -53,7 +55,7 @@ export default function StockOpnamePage({
   
 const fetchProducts = async () => {
   try {
-    const json = await apiRequest('/api/products');
+    const json = await apiRequest('/products');
     const prods = json.data || [];
     setProducts(prods);
   } catch (err) {
@@ -64,7 +66,7 @@ const fetchProducts = async () => {
 
 const fetchSessions = async () => {
   try {
-    const json = await apiRequest('/api/stocktake/sessions');
+    const json = await apiRequest('/stocktake/sessions');
 
     const sessionData = Array.isArray(json.data)
       ? json.data
@@ -76,6 +78,37 @@ const fetchSessions = async () => {
   } catch (err) {
     console.error('Error loading Stock Opname sessions:', err);
     showNotification?.(err.message, 'error');
+  }
+};
+
+const fetchOpnameZones = async () => {
+  setZonesLoading(true);
+  try {
+    const json = await apiRequest('/stocktake/zones');
+    const locations = Array.isArray(json.data) ? json.data : [];
+    const zonesByCode = new Map();
+
+    locations.forEach((location) => {
+      const code = String(location.zone_code || '').trim();
+      if (!code) return;
+
+      const totalExpected = Number(location.total_expected || 0);
+      const label = location.zone_name || location.zone_description || '';
+      if (!zonesByCode.has(code)) zonesByCode.set(code, { label, totalExpected });
+    });
+
+    const zones = Array.from(zonesByCode, ([code, details]) => ({ code, ...details }));
+    setOpnameZones(zones);
+    setSelectedZone((current) =>
+      zones.some((zone) => zone.code === current) ? current : (zones[0]?.code || '')
+    );
+  } catch (err) {
+    console.error('Error loading Stock Opname zones:', err);
+    setOpnameZones([]);
+    setSelectedZone('');
+    showNotification?.(`Gagal memuat zona opname: ${err.message}`, 'error');
+  } finally {
+    setZonesLoading(false);
   }
 };
 
@@ -169,6 +202,7 @@ const handleSelectApprovalSession = (session) => {
 };
   useEffect(() => {
   fetchProducts();
+  fetchOpnameZones();
 }, [lastEvent]);
 
 useEffect(() => {
@@ -206,7 +240,7 @@ useEffect(() => {
 
 const submitScanResults = async (epcs, activeSessionId = sessionId) => {
   try {
-    const result = await apiRequest('/api/stocktake/scan-submit', {
+    const result = await apiRequest('/stocktake/scan-submit', {
       method: 'POST',
       body: JSON.stringify({
         session_id: activeSessionId,
@@ -239,11 +273,11 @@ const submitScanResults = async (epcs, activeSessionId = sessionId) => {
 const runHandheldOpnameSimulation = async () => {
   try {
     // Membuat sesi Stock Opname di backend
-    const session = await apiRequest('/api/stocktake/sessions', {
+    const session = await apiRequest('/stocktake/sessions', {
       method: 'POST',
       body: JSON.stringify({
         zone_code: selectedZone,
-        scanner_device: 'Chainway C72',
+        scanner_device: 'WEB-SIMULATION',
       }),
     });
 
@@ -269,7 +303,7 @@ const simulatedEpcs = [
       setScanProgress(step);
 
       setScannedCount(
-        (prev) => prev + Math.floor(12 + Math.random() * 15)
+        Math.ceil((step / 100) * simulatedEpcs.length)
       );
 
       if (step >= 100) {
@@ -291,7 +325,7 @@ setTimeout(async () => {
 buildDiscrepancyTable(result);
 
     showNotification?.(
-      `Pemindaian Zona ${selectedZone} berhasil direkonsiliasi!`,
+      `Simulasi EPC Zona ${selectedZone} selesai direkonsiliasi backend.`,
       'success'
     );
   } catch (err) {
@@ -330,25 +364,11 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
   return;
 }
 
-  const adjustments = discrepancyRows
-    .filter(
-      (row) =>
-        row.type !== 'MISPLACED' &&
-        row.diff !== 0 &&
-        row.product_id
-    )
-    .map((row) => ({
-      product_id: row.product_id,
-      diff_qty: row.diff,
-    }));
-
-
   try {
-    const result = await apiRequest('/api/stocktake/approve', {
+    const result = await apiRequest('/stocktake/approve', {
       method: 'POST',
       body: JSON.stringify({
         session_code: selectedApprovalSession.session_code,
-        adjustments,
       }),
     });
 
@@ -467,26 +487,33 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
               </span>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Audit fisik nirkabel dengan scanner RFID handheld (Chainway/Zebra) untuk mencocokkan data fisik vs sistem.
+              Mode demo memakai EPC contoh dan progres animasi. Untuk audit fisik, scan tag dari aplikasi handheld.
             </p>
           </div>
           <div className="flex items-center space-x-3">
             <select
               value={selectedZone}
               onChange={(e) => setSelectedZone(e.target.value)}
+              disabled={zonesLoading || opnameZones.length === 0 || scanning}
               className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none"
             >
-              <option value="A1">Zona A1 (Aksesoris Komputer)</option>
-              <option value="B2">Zona B2 (Periferal Gaming)</option>
-              <option value="C3">Zona C3 (Kabel & Konektor)</option>
+              {zonesLoading && <option value="">Memuat zona...</option>}
+              {!zonesLoading && opnameZones.length === 0 && (
+                <option value="">Zona tidak tersedia</option>
+              )}
+              {opnameZones.map((zone) => (
+                <option key={zone.code} value={zone.code}>
+                  Zona {zone.code} · {zone.totalExpected} item{zone.label ? ` · ${zone.label}` : ''}
+                </option>
+              ))}
             </select>
             <button
               onClick={runHandheldOpnameSimulation}
-              disabled={scanning}
+              disabled={scanning || zonesLoading || !selectedZone}
               className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/20 transition-all flex items-center space-x-2"
             >
               <span>📡</span>
-              <span>{scanning ? 'Memindai...' : 'Mulai Scan Handheld'}</span>
+              <span>{scanning ? 'Menjalankan demo...' : 'Jalankan Simulasi Demo'}</span>
             </button>
           </div>
         </div>
@@ -509,29 +536,28 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
                       : `Pemindaian Zona ${selectedZone} Selesai`}
                   </h4>
                   <p className="text-xs text-slate-400 mt-1">
-                    Handheld Device:{' '}
+                    Mode perangkat:{' '}
                     <span className="text-emerald-400 font-mono">
-                      Chainway C72 Android RFID (920.5 MHz)
+                      Simulasi EPC (tanpa pembaca fisik)
                     </span>
                   </p>
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-4 text-center w-full md:w-auto">
                 <div className="bg-slate-800 p-3 rounded-xl">
-                  <span className="text-[11px] text-slate-400 block">Tags Terbaca</span>
+                  <span className="text-[11px] text-slate-400 block">EPC contoh terkirim</span>
                   <span className="text-2xl font-bold text-emerald-400">{scannedCount}</span>
                 </div>
                 <div className="bg-slate-800 p-3 rounded-xl">
-                  <span className="text-[11px] text-slate-400 block">Kecepatan Scan</span>
+                  <span className="text-[11px] text-slate-400 block">Target zona</span>
                   <span className="text-2xl font-bold text-white">
-                    240 <span className="text-xs text-slate-400">tag/s</span>
+                    {opnameZones.find((zone) => zone.code === selectedZone)?.totalExpected ?? 0}
+                    <span className="text-xs text-slate-400"> item</span>
                   </span>
                 </div>
                 <div className="bg-slate-800 p-3 rounded-xl">
-                  <span className="text-[11px] text-slate-400 block">Sinyal Rata-rata</span>
-                  <span className="text-2xl font-bold text-blue-400">
-                    -54 <span className="text-xs text-slate-400">dBm</span>
-                  </span>
+                  <span className="text-[11px] text-slate-400 block">Mode</span>
+                  <span className="text-2xl font-bold text-blue-400">DEMO</span>
                 </div>
               </div>
             </div>
@@ -640,7 +666,8 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
             </div>
             <button
               onClick={handleApproveAdjustment}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center space-x-2"
+              disabled={!selectedApprovalSession || selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL'}
+              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center space-x-2"
             >
               <span>✅</span>
               <span>Setujui Penyesuaian ke Ledger</span>

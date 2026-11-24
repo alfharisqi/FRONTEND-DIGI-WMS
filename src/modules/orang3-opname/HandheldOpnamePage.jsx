@@ -30,7 +30,7 @@ export default function HandheldOpnamePage({ onNotify }) {
         clearInterval(timer);
         setScanning(false);
         try {
-          const res = await apiRequest('/api/stocktake/scan-submit', {
+          const res = await apiRequest('/stocktake/scan-submit', {
             method: 'POST',
             body: JSON.stringify({
               zone_code: zone,
@@ -52,7 +52,7 @@ export default function HandheldOpnamePage({ onNotify }) {
 
   const handleApproveAdjustment = async () => {
     try {
-      await apiRequest('/api/stocktake/approve', {
+      await apiRequest('/stocktake/approve', {
         method: 'POST',
         body: JSON.stringify({
           session_code: sessionCode,
