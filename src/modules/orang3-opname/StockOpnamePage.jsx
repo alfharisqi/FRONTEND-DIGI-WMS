@@ -18,28 +18,35 @@ export default function StockOpnamePage({
   const [sessions, setSessions] = useState([]);
   const [selectedApprovalSession, setSelectedApprovalSession] = useState(null);
 
-  // Gate Alarm State (Persis Template Awal digiwms.html)
   const [gateStatus, setGateStatus] = useState('AMAN'); // 'AMAN' | 'ALARM' | 'CROSSREAD'
-  const [gateIncidents, setGateIncidents] = useState([
-    {
-      time: '12 Mei 2026 14:20',
-      epc: 'E280-1160-2000-042E',
-      name: 'Gaming Headset 7.1',
-      antenna: 'Antena 1 & 2 (Keluar)',
-      rssi: '-55 dBm',
-      status: 'Authorized Out',
-      action: 'Lolos Verifikasi',
-    },
-    {
-      time: '12 Mei 2026 11:05',
-      epc: 'E280-1160-2000-055F',
-      name: 'SSD External 1TB',
-      antenna: 'Antena 1 & 2 (Keluar)',
-      rssi: '-50 dBm',
-      status: 'Authorized Out',
-      action: 'Lolos Verifikasi',
-    },
-  ]);
+  const [gateIncidents, setGateIncidents] = useState([]);
+
+  const fetchRealGateEvents = async () => {
+    try {
+      const json = await apiRequest('/api/gate/events?limit=20');
+      const events = Array.isArray(json.data) ? json.data : [];
+      if (events.length > 0) {
+        setGateIncidents(
+          events.map((evt) => ({
+            time: evt.event_time
+              ? new Date(evt.event_time).toLocaleString('id-ID')
+              : '-',
+            epc: evt.epc || '-',
+            name: evt.item_name || `Gate Pass ${evt.pass_code || '-'}`,
+            antenna: evt.antenna_info || 'Antena 1 & 2 (Keluar)',
+            rssi: evt.rssi || '-52 dBm',
+            status:
+              evt.authorization_status === 'UNAUTHORIZED'
+                ? 'ILLEGAL / UNPAID'
+                : 'Authorized Out',
+            action: evt.action_taken || 'Lolos Verifikasi',
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Error loading real gate events:', err);
+    }
+  };
 
   const audioCtxRef = useRef(null);
 
@@ -167,6 +174,8 @@ const handleSelectApprovalSession = (session) => {
 useEffect(() => {
   if (activeMenu === 'rfid-opname') {
     fetchSessions();
+  } else if (activeMenu === 'rfid-gate') {
+    fetchRealGateEvents();
   }
 }, [activeMenu, lastEvent]);
 

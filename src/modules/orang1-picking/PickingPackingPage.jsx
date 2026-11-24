@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Package, PackageCheck, RefreshCw, ScanLine, Search } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, Package, PackageCheck, Plus, RefreshCw, ScanLine, Search } from 'lucide-react';
 import { pickingRequest } from './api';
+import { inboundRequest } from '../orang1-inbound/api';
 import PackingDetailsDialog from './PackingDetailsDialog';
 
 const columns = [
@@ -178,6 +179,14 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
   const [status, setStatus] = useState('');
   const [packingStatus, setPackingStatus] = useState('');
   const [dialog, setDialog] = useState(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [products, setProducts] = useState([]);
+  const [creating, setCreating] = useState(false);
+  const [newOrderForm, setNewOrderForm] = useState({
+    order_number: `ORD-PICK-2026-${Math.floor(100 + Math.random() * 900)}`,
+    product_id: '',
+    requested_qty: 1,
+  });
   const listRequest = useRef(null);
 
   const load = useCallback(async () => {
@@ -215,6 +224,52 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     setOrders(previous => previous.map(order => order.id === updated.id ? updated : order));
   }
 
+  async function openCreateOrderModal() {
+    setShowCreateModal(true);
+    try {
+      const prodList = await inboundRequest('/products');
+      if (Array.isArray(prodList)) {
+        setProducts(prodList);
+        if (prodList.length > 0 && !newOrderForm.product_id) {
+          setNewOrderForm(prev => ({ ...prev, product_id: prodList[0].id }));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  async function handleCreatePickingOrder(event) {
+    event.preventDefault();
+    if (!newOrderForm.order_number.trim() || !newOrderForm.product_id) return;
+    setCreating(true);
+    try {
+      await pickingRequest('/orders', {
+        body: {
+          order_number: newOrderForm.order_number.trim(),
+          lines: [
+            {
+              product_id: newOrderForm.product_id,
+              requested_qty: Number(newOrderForm.requested_qty) || 1,
+            },
+          ],
+        },
+      });
+      showNotification?.(`Pesanan picking ${newOrderForm.order_number} berhasil dibuat!`, 'success');
+      setShowCreateModal(false);
+      setNewOrderForm({
+        order_number: `ORD-PICK-2026-${Math.floor(100 + Math.random() * 900)}`,
+        product_id: products[0]?.id || '',
+        requested_qty: 1,
+      });
+      await load();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal membuat pesanan picking', 'error');
+    } finally {
+      setCreating(false);
+    }
+  }
+
   const terms = [searchQuery, search].join(' ').toLowerCase().trim().split(/\s+/).filter(Boolean);
   const matches = orders.filter(order => {
     if (packingStatus && (order.status !== 'SIAP_PACKING' || order.packing_status !== packingStatus)) return false;
@@ -227,7 +282,14 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     <div className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold text-slate-900">Picking &amp; Packing</h2>
-        <button className={secondary} disabled={loading} onClick={load}><RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Muat Ulang</button>
+        <div className="flex items-center gap-2">
+          <button type="button" className={primary} onClick={openCreateOrderModal}>
+            <Plus size={16} /> Buat Pesanan Picking
+          </button>
+          <button className={secondary} disabled={loading} onClick={load}>
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} /> Muat Ulang
+          </button>
+        </div>
       </header>
       <div className="flex flex-wrap gap-3">
         <label className="relative min-w-48 flex-1">
@@ -284,6 +346,60 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
         ? <OrderDialog key={selected.id} order={selected} close={() => setDialog(null)} onScan={scan} notify={showNotification} />
         : <PackingDetailsDialog key={`${selected.id}:${dialog.mode}`} orderId={selected.id} orderNumber={selected.order_number}
             mode={dialog.mode} close={() => setDialog(null)} onOrderChange={updateOrder} notify={showNotification} />)}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-lg font-bold text-slate-900">Buat Pesanan Picking Baru</h3>
+              <button type="button" className={secondary} onClick={() => setShowCreateModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleCreatePickingOrder} className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">Nomor Pesanan (Order Number)</label>
+                <input
+                  type="text"
+                  required
+                  className={input}
+                  value={newOrderForm.order_number}
+                  onChange={e => setNewOrderForm({ ...newOrderForm, order_number: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">Pilih Barang / SKU</label>
+                <select
+                  required
+                  className={input}
+                  value={newOrderForm.product_id}
+                  onChange={e => setNewOrderForm({ ...newOrderForm, product_id: e.target.value })}
+                >
+                  <option value="">-- Pilih Produk --</option>
+                  {products.map(p => (
+                    <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">Jumlah Unit Diminta</label>
+                <input
+                  type="number"
+                  required
+                  min="1"
+                  max="100"
+                  className={input}
+                  value={newOrderForm.requested_qty}
+                  onChange={e => setNewOrderForm({ ...newOrderForm, requested_qty: e.target.value })}
+                />
+              </div>
+              <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+                <button type="button" className={secondary} onClick={() => setShowCreateModal(false)}>Batal</button>
+                <button type="submit" disabled={creating} className={primary}>
+                  {creating ? 'Menyimpan…' : 'Simpan Pesanan'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

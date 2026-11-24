@@ -24,7 +24,14 @@ function backendDirectory() {
     throw new Error('DIGIWMS_DEV_BACKEND_DIR kosong. Isi path checkout backend atau hapus variabel untuk memakai folder sebelah frontend.');
   }
   const source = override === undefined ? 'Folder backend di sebelah frontend' : 'DIGIWMS_DEV_BACKEND_DIR';
-  const selected = override === undefined ? path.resolve(frontend, '../BACKEND-DIGI-WMS') : path.resolve(override);
+  const siblingBackend = path.resolve(frontend, '../BACKEND-DIGI-WMS');
+  const nestedBeBackend = path.resolve(frontend, '../../BE/BACKEND-DIGI-WMS');
+  const defaultBackend = statSync(siblingBackend, { throwIfNoEntry: false })?.isDirectory()
+    ? siblingBackend
+    : statSync(nestedBeBackend, { throwIfNoEntry: false })?.isDirectory()
+      ? nestedBeBackend
+      : siblingBackend;
+  const selected = override === undefined ? defaultBackend : path.resolve(override);
   if (!statSync(selected, { throwIfNoEntry: false })?.isDirectory()) {
     throw new Error(`${source} tidak menunjuk direktori: ${selected}. Siapkan checkout BACKEND-DIGI-WMS atau atur DIGIWMS_DEV_BACKEND_DIR.`);
   }
@@ -124,8 +131,7 @@ async function main() {
     const args = seedPacking ? process.argv.slice(2).filter(arg => arg !== '--seed-packing') : archive ? ['--archive'] : [];
     child = fork(path.join(cwd, entry), args, {
       cwd, env: { ...env, DIGIWMS_DEV_FRONTEND_ORIGIN: origin, DIGIWMS_DEV_SERVICE_ID: randomUUID() },
-      // Let the supervisor finish PostgreSQL shutdown over IPC even if npm's console exits first.
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true, detached: !seedPacking && process.platform === 'win32',
+      stdio: ['ignore', 'inherit', 'inherit', 'ipc'], windowsHide: true,
     });
     childClosed = once(child, 'close').catch(() => [1]);
     if (archive || seedPacking) { const [code] = await childClosed; process.exitCode = code ?? 1; return; }

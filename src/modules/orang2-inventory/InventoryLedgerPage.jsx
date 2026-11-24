@@ -1295,7 +1295,14 @@ export default function InventoryLedgerPage({
                       </span>
                     </td>
                     <td className="p-4">
-                      <span className="bg-blue-50 text-blue-700 text-xs px-2.5 py-1 rounded-lg font-semibold">
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
+                          String(s.status).toUpperCase().includes('SHIPPED') ||
+                          String(s.status).toUpperCase().includes('KELUAR')
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : 'bg-blue-50 text-blue-700'
+                        }`}
+                      >
                         {s.status}
                       </span>
                     </td>
@@ -1333,7 +1340,7 @@ export default function InventoryLedgerPage({
                 {pickingOrders.length > 0 && (
                   <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
                     <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
-                      Tarik Otomatis dari Order Picking (Opsional)
+                      Tarik Otomatis dari Order Picking & Packing (Opsional)
                     </label>
                     <select
                       defaultValue=""
@@ -1347,18 +1354,28 @@ export default function InventoryLedgerPage({
                           : [];
                         setShipForm((prev) => ({
                           ...prev,
-                          dest: ord.customer_or_destination || ord.customer_name || prev.dest,
+                          resi: prev.resi || `RESI-${ord.order_number || String(ord.id).slice(0, 6).toUpperCase()}`,
+                          dest:
+                            ord.customer_or_destination &&
+                            !['MENUNGGU_PICKING', 'SEDANG_DIAMBIL', 'SIAP_PACKING', 'SELESAI_PACKING', 'MENUNGGU_PACKING'].includes(
+                              String(ord.customer_or_destination).toUpperCase()
+                            )
+                              ? ord.customer_or_destination
+                              : prev.dest || `Pelanggan ${ord.order_number || ''}`,
                           epcs: epcsFromOrder.length > 0 ? epcsFromOrder.join('\n') : prev.epcs,
                         }));
                       }}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
                     >
-                      <option value="">-- Pilih Order Picking untuk isi EPC otomatis --</option>
-                      {pickingOrders.map((ord) => (
-                        <option key={ord.id} value={ord.id}>
-                          {ord.order_number || ord.invoice_or_resi || ord.id} — {ord.customer_or_destination || ord.status}
-                        </option>
-                      ))}
+                      <option value="">-- Pilih Order Picking untuk isi Resi & EPC otomatis --</option>
+                      {pickingOrders.map((ord) => {
+                        const itemCount = Array.isArray(ord.items) ? ord.items.length : Number(ord.scanned_items || 0);
+                        return (
+                          <option key={ord.id} value={ord.id}>
+                            {ord.order_number || ord.invoice_or_resi || ord.id} — Status: {ord.status} ({itemCount} EPC ter-scan)
+                          </option>
+                        );
+                      })}
                     </select>
                   </div>
                 )}
@@ -1513,9 +1530,9 @@ export default function InventoryLedgerPage({
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                   />
                 </div>
-                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
-                  <p className="text-xs text-blue-800">
-                    Pengiriman hanya dapat dicatat jika seluruh EPC sudah berstatus AUTHORIZED_OUT. Status Gate Pass ditampilkan jika disediakan oleh backend.
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <p className="text-xs text-emerald-800 font-medium">
+                    ✅ <strong>Otorisasi & Gate Pass Otomatis (1-Langkah):</strong> Cukup pilih EPC di sini (baik yang sudah selesai Picking/Packing maupun stok rak). Sistem akan otomatis mengubah status menjadi <code>AUTHORIZED_OUT</code> dan menerbitkan nomor <strong>Gate Pass ACTIVE</strong> untuk langsung diverifikasi Satpam di menu <em>Keamanan & Pass</em>.
                   </p>
                 </div>
                 <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">

@@ -165,6 +165,34 @@ export default function LoginPage({ onLoginSuccess }) {
             >
               {loading ? 'Memverifikasi Kredensial...' : 'Masuk ke Sistem DIGI WMS →'}
             </button>
+
+            <div className="pt-4 border-t border-slate-100">
+              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
+                Akun Cepat (Klik untuk Isi Otomatis — Password: <code className="text-blue-600">123456</code>)
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { u: 'admin.wms', label: 'Admin (Budi)' },
+                  { u: 'sarah.jenkins', label: 'Supervisor (Sarah)' },
+                  { u: 'operator.inbound', label: 'Operator (Andi)' },
+                  { u: 'security.gate', label: 'Security (Hendra)' },
+                ].map((acc) => (
+                  <button
+                    key={acc.u}
+                    type="button"
+                    onClick={() => {
+                      setUsername(acc.u);
+                      setPassword('123456');
+                      setErrorMsg('');
+                    }}
+                    className="px-3 py-2 text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition text-xs"
+                  >
+                    <span className="font-bold text-slate-800 block">{acc.label}</span>
+                    <span className="font-mono text-[10px] text-blue-600">@{acc.u}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
           </form>
         </div>
       </div>

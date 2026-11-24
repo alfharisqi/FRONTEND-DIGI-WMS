@@ -360,7 +360,7 @@ export default function GateSecurityPage({
             className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm shadow-blue-600/20 transition inline-flex items-center space-x-1.5"
           >
             <span>➕</span>
-            <span>Terbitkan Gate Pass</span>
+            <span>Terbitkan Gate Pass Manual</span>
           </button>
           <button
             onClick={handleTriggerAlarmBreach}
