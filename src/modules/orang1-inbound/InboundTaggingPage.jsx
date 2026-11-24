@@ -121,7 +121,7 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
     setFormError('');
     setForm(kind === 'product' ? productForm(row ?? (products.some(product => 'default_location_code' in product) ? { default_location_code: '' } : {})) : kind === 'grn' ? {
       po_number: row?.po_number ?? '', supplier_name: row?.supplier_name ?? '', receipt_date: row ? dateText(row.receipt_date) : today(), lines: row?.lines?.length ? row.lines : [emptyLine()],
-    } : { product_id: row?.product_id ?? '', type: row ? row.type ?? '' : 'STANDARD_LABEL', epc_custom: '', inbound_purpose: row ? 'SPECIAL' : 'RECEIPT', grn_id: '', grn_line_id: '', ...(row?.status === 'UNASSIGNED' ? { status: 'ENCODED' } : {}) });
+    } : { product_id: row?.product_id ?? '', type: row ? row.type ?? '' : 'STANDARD_LABEL', epc_custom: '', batch_qty: 1, inbound_purpose: row ? 'SPECIAL' : 'RECEIPT', grn_id: '', grn_line_id: '', ...(row?.status === 'UNASSIGNED' ? { status: 'ENCODED' } : {}) });
     setModal({ action: 'form', kind, row });
   };
   const details = async (kind, row) => {
@@ -148,6 +148,7 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
         if (kind === 'product') { payload.price = Number(form.price); payload.min_stock_alert = Number(form.min_stock_alert); }
         if (kind === 'grn') payload.lines = receivedLines(products, form.lines);
         if (kind === 'tag') {
+          delete payload.batch_qty;
           if (row || form.inbound_purpose !== 'RECEIPT') payload.product_id = selectedProductId(products, form.product_id);
           else delete payload.product_id;
           if (row || form.inbound_purpose !== 'RECEIPT') { delete payload.grn_id; delete payload.grn_line_id; }
@@ -164,9 +165,20 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
         if (['cancel', 'deactivate'].includes(operation)) payload = { reason: form.reason.trim() };
         if (operation === 'replace') payload = { reason: form.reason.trim(), epc: form.epc.trim().toUpperCase() };
       }
-      await inboundRequest(path, method, payload);
-      setModal(null);
-      notify(kind === 'tag' && operation === 'form' ? 'Registrasi simulasi tersimpan. Penulisan chip fisik belum dilakukan.' : 'Perubahan berhasil disimpan.');
+      const batchQty = kind === 'tag' && operation === 'form' && !row ? Math.max(1, Math.min(100, Number(form.batch_qty) || 1)) : 1;
+      if (batchQty > 1) {
+        let created = 0;
+        for (let idx = 0; idx < batchQty; idx += 1) {
+          await inboundRequest(path, method, { ...payload, epc_custom: newEpc() });
+          created += 1;
+        }
+        setModal(null);
+        notify(`Registrasi batch berhasil: ${created} tag RFID simulasi dibuat sekaligus.`);
+      } else {
+        await inboundRequest(path, method, payload);
+        setModal(null);
+        notify(kind === 'tag' && operation === 'form' ? 'Registrasi simulasi tersimpan. Penulisan chip fisik belum dilakukan.' : 'Perubahan berhasil disimpan.');
+      }
       await fetchData();
     } catch (error) { setFormError(error.message); }
     finally { busyRef.current = false; setBusy(false); }
@@ -254,7 +266,8 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
           </> : productSelector}
           <Field label="Tipe Tag"><select aria-label="Tipe Tag" required className={inputClass} value={form.type} onChange={e => change('type', e.target.value)}><option value="">Pilih tipe tag</option>{typeOptions.map(type => <option key={type} value={type}>{display(type)}</option>)}</select></Field>
           {!modal.row && <>
-            <Field label="EPC 96-bit — 24 Digit Hexadecimal"><div className="flex gap-2"><input className={inputClass + ' font-mono min-w-0'} value={form.epc_custom} onChange={e => change('epc_custom', e.target.value.toUpperCase())} pattern="[0-9A-Fa-f]{24}" maxLength={24} placeholder="Kosongkan untuk generate di backend" /><button type="button" onClick={() => change('epc_custom', newEpc())} className={`${buttonClass} bg-slate-200`}>Generate</button></div></Field>
+            <Field label="Jumlah Tag Batch (1 - 100)"><div className="flex items-center gap-2"><input type="number" min={1} max={100} required className={inputClass + ' w-28'} value={form.batch_qty ?? 1} onChange={e => change('batch_qty', e.target.value)} /><span className="text-[11px] text-slate-500">{Number(form.batch_qty) > 1 ? `Auto-generate ${form.batch_qty} EPC unik sekaligus` : 'Mode satuan (bisa isi EPC manual)'}</span></div></Field>
+            {Number(form.batch_qty || 1) <= 1 && <Field label="EPC 96-bit — 24 Digit Hexadecimal"><div className="flex gap-2"><input className={inputClass + ' font-mono min-w-0'} value={form.epc_custom} onChange={e => change('epc_custom', e.target.value.toUpperCase())} pattern="[0-9A-Fa-f]{24}" maxLength={24} placeholder="Kosongkan untuk generate di backend" /><button type="button" onClick={() => change('epc_custom', newEpc())} className={`${buttonClass} bg-slate-200`}>Generate</button></div></Field>}
           </>}
         </> : <>
           <p className="text-sm text-slate-600">{modal.action === 'delete' ? `Hapus produk ${modal.row.sku}? Backend akan menolak jika memiliki relasi transaksi.` : modal.action === 'verify' ? `Konfirmasi penerimaan fisik ${modal.row.po_number}? Setelah verifikasi, data penting GRN dikunci. Status RFID tetap mengikuti proses tagging.` : modal.action === 'cancel' ? `Batalkan ${modal.row.po_number}? Riwayat GRN tetap tersimpan. Penerimaan dengan transaksi stok harus melalui reversal terotorisasi.` : modal.action === 'replace' ? `Ganti EPC simulasi ${modal.row.epc} sebelum Putaway. EPC lama dan alasannya tersimpan.` : `Tandai EPC ${modal.row.epc} sebagai DAMAGED? EPC dan seluruh riwayat tetap disimpan.`}</p>

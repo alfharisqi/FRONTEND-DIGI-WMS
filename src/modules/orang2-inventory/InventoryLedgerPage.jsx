@@ -19,9 +19,13 @@ export default function InventoryLedgerPage({
     max_capacity: '',
   });
 
-  // Putaway Form State
-  const [epcCode, setEpcCode] = useState('E280689400004001A1B2C301');
+  // Putaway Form State (Mendukung satuan & massal/bulk)
+  const [epcCode, setEpcCode] = useState('');
   const [targetLoc, setTargetLoc] = useState('');
+  const [allTags, setAllTags] = useState([]);
+  const [pickingOrders, setPickingOrders] = useState([]);
+  const [selectedPutawayEpcs, setSelectedPutawayEpcs] = useState([]);
+  const [isBulkPutaway, setIsBulkPutaway] = useState(false);
 
   // Riwayat pengiriman dimuat dari backend Outbound.
   const [shippingList, setShippingList] = useState([]);
@@ -37,10 +41,12 @@ export default function InventoryLedgerPage({
 
   const fetchInventoryData = async () => {
     try {
-      const [locRes, ledRes, shipRes] = await Promise.all([
+      const [locRes, ledRes, shipRes, tagsRes, pickRes] = await Promise.all([
         fetch(`${API_BASE_URL}/locations`),
         fetch(`${API_BASE_URL}/inventory/ledger`),
         fetch(`${API_BASE_URL}/outbound/shipments`),
+        fetch(`${API_BASE_URL}/tags`).catch(() => null),
+        fetch(`${API_BASE_URL}/outbound/picking-orders`).catch(() => null),
       ]);
 
       if (!locRes.ok) {
@@ -55,6 +61,16 @@ export default function InventoryLedgerPage({
       if (ledRes.ok) {
         const ledJson = await ledRes.json();
         setLedger(Array.isArray(ledJson.data) ? ledJson.data : []);
+      }
+
+      if (tagsRes && tagsRes.ok) {
+        const tagsJson = await tagsRes.json().catch(() => ({}));
+        setAllTags(Array.isArray(tagsJson.data) ? tagsJson.data : []);
+      }
+
+      if (pickRes && pickRes.ok) {
+        const pickJson = await pickRes.json().catch(() => ({}));
+        setPickingOrders(Array.isArray(pickJson.data) ? pickJson.data : []);
       }
 
       if (shipRes.ok) {
@@ -100,32 +116,59 @@ export default function InventoryLedgerPage({
 
   const handlePutaway = async (e) => {
     e.preventDefault();
-    if (!epcCode.trim() || !targetLoc) {
-      showNotification?.('Masukkan EPC dan pilih rak tujuan.', 'error');
+    const typedEpcs = epcCode
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const epcQueue = [...new Set([...selectedPutawayEpcs, ...typedEpcs])];
+
+    if (epcQueue.length === 0 || !targetLoc) {
+      showNotification?.('Pilih minimal satu EPC atau ketik EPC, lalu pilih rak tujuan.', 'error');
       return;
     }
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ epc: epcCode.trim(), location_code: targetLoc }),
-      });
+    setIsBulkPutaway(true);
+    let okCount = 0;
+    let failCount = 0;
+    let lastError = '';
 
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.message || 'Gagal memproses Putaway.');
+    try {
+      for (const epc of epcQueue) {
+        const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ epc, location_code: targetLoc }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          okCount += 1;
+        } else {
+          failCount += 1;
+          lastError = json.message || `Gagal putaway ${epc}`;
+        }
       }
 
-      showNotification?.(
-        json.message || `Tag ${epcCode} berhasil ditempatkan di ${targetLoc}`,
-        'success'
-      );
       await fetchInventoryData();
-      setEpcCode('');
+      setSelectedPutawayEpcs([]);
+      if (okCount > 0 && failCount === 0) {
+        setEpcCode('');
+        showNotification?.(
+          `${okCount} barang berhasil ditempatkan di ${targetLoc}.`,
+          'success'
+        );
+      } else if (okCount > 0 && failCount > 0) {
+        showNotification?.(
+          `${okCount} berhasil, ${failCount} gagal (${lastError}).`,
+          'warn'
+        );
+      } else {
+        showNotification?.(lastError || 'Gagal memproses Putaway.', 'error');
+      }
     } catch (err) {
       console.error('Putaway error:', err);
       showNotification?.(err.message || 'Terjadi kesalahan saat Putaway.', 'error');
+    } finally {
+      setIsBulkPutaway(false);
     }
   };
 
@@ -928,21 +971,97 @@ export default function InventoryLedgerPage({
           </div>
         )}
 
-        {/* Form Putaway / Pindah Lokasi Rak */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-900 text-base">
-            Putaway & Transfer Tag RFID Antar-Rak
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5 mb-4">
-            Pindahkan barang dari Staging Inbound menuju Rak Penyimpanan Utama.
-          </p>
+        {/* Form Putaway / Pindah Lokasi Rak (Mendukung Bulk / Pilih Semua) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base">
+                Putaway & Transfer Tag RFID Antar-Rak (Satuan / Massal)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Centang banyak tag dari Staging Inbound (INB01) sekaligus atau paste daftar EPC untuk dipindah ke Rak Penyimpanan Utama.
+              </p>
+            </div>
+            {(() => {
+              const readyPutawayTags = allTags.filter(
+                (t) => String(t.status || '').toUpperCase() === 'ENCODED'
+              );
+              if (readyPutawayTags.length === 0) return null;
+              return (
+                <div className="flex items-center gap-2 text-xs shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPutawayEpcs(readyPutawayTags.map((t) => t.epc))}
+                    className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold transition"
+                  >
+                    Pilih Semua ({readyPutawayTags.length})
+                  </button>
+                  {selectedPutawayEpcs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPutawayEpcs([])}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition"
+                    >
+                      Batal ({selectedPutawayEpcs.length})
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {(() => {
+            const readyPutawayTags = allTags.filter(
+              (t) => String(t.status || '').toUpperCase() === 'ENCODED'
+            );
+            if (readyPutawayTags.length === 0) return null;
+            return (
+              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {readyPutawayTags.map((t) => {
+                  const checked = selectedPutawayEpcs.includes(t.epc);
+                  return (
+                    <label
+                      key={t.id || t.epc}
+                      className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition ${
+                        checked
+                          ? 'bg-blue-50 border-blue-300 text-blue-900'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setSelectedPutawayEpcs((prev) =>
+                            checked ? prev.filter((e) => e !== t.epc) : [...prev, t.epc]
+                          )
+                        }
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono font-semibold truncate">{t.epc}</p>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {t.sku || t.product_name || 'Tag ENCODED'}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           <form onSubmit={handlePutaway} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
               type="text"
-              required
+              required={selectedPutawayEpcs.length === 0}
               value={epcCode}
               onChange={(e) => setEpcCode(e.target.value)}
-              placeholder="Kode EPC Tag RFID"
+              placeholder={
+                selectedPutawayEpcs.length > 0
+                  ? `${selectedPutawayEpcs.length} EPC terpilih (opsional tambah manual)`
+                  : 'Kode EPC Tag RFID (bisa pisah koma)'
+              }
               className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
             />
             <select
@@ -960,10 +1079,14 @@ export default function InventoryLedgerPage({
             </select>
             <button
               type="submit"
-              disabled={rackLocations.length === 0}
+              disabled={rackLocations.length === 0 || isBulkPutaway}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-md transition"
             >
-              Simpan Putaway Rak
+              {isBulkPutaway
+                ? 'Memproses Putaway...'
+                : selectedPutawayEpcs.length > 0
+                ? `Simpan ${selectedPutawayEpcs.length} Tag ke Rak`
+                : 'Simpan Putaway Rak'}
             </button>
           </form>
         </div>
@@ -1194,7 +1317,7 @@ export default function InventoryLedgerPage({
 
         {showShippingModal && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-slate-100">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-lg text-slate-900">
                   Buat Pengiriman & Gate Pass Baru
@@ -1207,6 +1330,39 @@ export default function InventoryLedgerPage({
                 </button>
               </div>
               <form onSubmit={handleAddShipping} className="space-y-4">
+                {pickingOrders.length > 0 && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
+                      Tarik Otomatis dari Order Picking (Opsional)
+                    </label>
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        const ord = pickingOrders.find((o) => String(o.id) === e.target.value);
+                        if (!ord) return;
+                        const epcsFromOrder = Array.isArray(ord.epcs)
+                          ? ord.epcs
+                          : Array.isArray(ord.items)
+                          ? ord.items.map((it) => it.epc).filter(Boolean)
+                          : [];
+                        setShipForm((prev) => ({
+                          ...prev,
+                          dest: ord.customer_or_destination || ord.customer_name || prev.dest,
+                          epcs: epcsFromOrder.length > 0 ? epcsFromOrder.join('\n') : prev.epcs,
+                        }));
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                    >
+                      <option value="">-- Pilih Order Picking untuk isi EPC otomatis --</option>
+                      {pickingOrders.map((ord) => (
+                        <option key={ord.id} value={ord.id}>
+                          {ord.order_number || ord.invoice_or_resi || ord.id} — {ord.customer_or_destination || ord.status}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -1250,15 +1406,96 @@ export default function InventoryLedgerPage({
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
-                    Daftar EPC Barang (pisahkan dengan baris baru atau koma)
-                  </label>
+                  {(() => {
+                    const shippableTags = allTags.filter((t) =>
+                      ['AUTHORIZED_OUT', 'RESERVED', 'IN_STOCK'].includes(
+                        String(t.status || '').toUpperCase()
+                      )
+                    );
+                    const currentEpcs = shipForm.epcs
+                      .split(/[\n,]+/)
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-semibold text-slate-600 uppercase">
+                            Pilih EPC Barang Massal ({shippableTags.length} tersedia)
+                          </label>
+                          {shippableTags.length > 0 && (
+                            <div className="flex items-center gap-2 text-[11px]">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShipForm({
+                                    ...shipForm,
+                                    epcs: shippableTags.map((t) => t.epc).join('\n'),
+                                  })
+                                }
+                                className="font-semibold text-blue-600 hover:underline"
+                              >
+                                Pilih Semua
+                              </button>
+                              <span className="text-slate-300">|</span>
+                              <button
+                                type="button"
+                                onClick={() => setShipForm({ ...shipForm, epcs: '' })}
+                                className="font-semibold text-slate-500 hover:underline"
+                              >
+                                Bersihkan
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {shippableTags.length > 0 && (
+                          <div className="max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50 space-y-1 mb-2">
+                            {shippableTags.map((t) => {
+                              const checked = currentEpcs.includes(t.epc);
+                              const isAuthOut = String(t.status).toUpperCase() === 'AUTHORIZED_OUT';
+                              return (
+                                <label
+                                  key={t.id || t.epc}
+                                  className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg hover:bg-white cursor-pointer text-[11px]"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => {
+                                        const next = checked
+                                          ? currentEpcs.filter((e) => e !== t.epc)
+                                          : [...currentEpcs, t.epc];
+                                        setShipForm({ ...shipForm, epcs: next.join('\n') });
+                                      }}
+                                      className="rounded border-slate-300 text-blue-600"
+                                    />
+                                    <span className="font-mono font-semibold text-slate-800 truncate">
+                                      {t.epc}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                                      isAuthOut
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    {t.status}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
                   <textarea
                     required
                     rows={3}
                     value={shipForm.epcs}
                     onChange={(e) => setShipForm({ ...shipForm, epcs: e.target.value })}
-                    placeholder="Contoh: QA-EPC-001"
+                    placeholder="Atau paste banyak EPC (pisahkan baris baru atau koma)..."
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
                   />
                 </div>

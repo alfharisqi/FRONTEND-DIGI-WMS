@@ -11,6 +11,7 @@ export default function GateSecurityPage({
   // State Utama
   const [gatePasses, setGatePasses] = useState([]);
   const [gateEvents, setGateEvents] = useState([]);
+  const [availableTags, setAvailableTags] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState('ALL'); // ALL, ACTIVE, USED, EXPIRED
   const [searchQuery, setSearchQuery] = useState('');
@@ -44,19 +45,25 @@ export default function GateSecurityPage({
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
-  // 1. Fetch Data Gate Passes & Gate Events
+  // 1. Fetch Data Gate Passes, Gate Events & Available Tags
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [gpRes, geRes] = await Promise.all([
+      const [gpRes, geRes, tagsRes] = await Promise.all([
         fetch(`${API_BASE_URL}/gate-passes`),
         fetch(`${API_BASE_URL}/gate/events?limit=10`),
+        fetch(`${API_BASE_URL}/tags`).catch(() => null),
       ]);
       const gpJson = await gpRes.json();
       const geJson = await geRes.json();
+      const tagsJson = tagsRes ? await tagsRes.json().catch(() => ({})) : {};
 
       setGatePasses(gpJson.data || []);
       setGateEvents(geJson.data || []);
+      const rawTags = Array.isArray(tagsJson.data) ? tagsJson.data : [];
+      setAvailableTags(
+        rawTags.filter((t) => ['IN_STOCK', 'RESERVED'].includes(String(t.status || '').toUpperCase()))
+      );
     } catch (err) {
       console.error('Gagal mengambil data Gate Pass & Security:', err);
       showNotification?.('Gagal memuat data gerbang keamanan dari server', 'error');
@@ -221,7 +228,7 @@ export default function GateSecurityPage({
     setGenerating(true);
     try {
       const epcArray = generateForm.epc_list
-        ? generateForm.epc_list.split(',').map((s) => s.trim()).filter(Boolean)
+        ? [...new Set(generateForm.epc_list.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean))]
         : [];
 
       const res = await fetch(`${API_BASE_URL}/gate-passes/generate`, {
@@ -995,12 +1002,78 @@ export default function GateSecurityPage({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Daftar Tag RFID EPC (Pisahkan Koma, Opsional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="E28011602000042E, E28011602000055F"
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Pilih Tag RFID Massal ({availableTags.length} tersedia)
+                  </label>
+                  {availableTags.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGenerateForm({
+                            ...generateForm,
+                            epc_list: availableTags.map((t) => t.epc).join(', '),
+                          })
+                        }
+                        className="text-[11px] font-semibold text-blue-600 hover:underline"
+                      >
+                        Pilih Semua
+                      </button>
+                      <span className="text-slate-300">|</span>
+                      <button
+                        type="button"
+                        onClick={() => setGenerateForm({ ...generateForm, epc_list: '' })}
+                        className="text-[11px] font-semibold text-slate-500 hover:underline"
+                      >
+                        Bersihkan
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {availableTags.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50 space-y-1 mb-2">
+                    {availableTags.map((t) => {
+                      const currentEpcs = generateForm.epc_list
+                        .split(/[\n,]+/)
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                      const checked = currentEpcs.includes(t.epc);
+                      return (
+                        <label
+                          key={t.id || t.epc}
+                          className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg hover:bg-white cursor-pointer text-[11px]"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => {
+                                const next = checked
+                                  ? currentEpcs.filter((e) => e !== t.epc)
+                                  : [...currentEpcs, t.epc];
+                                setGenerateForm({ ...generateForm, epc_list: next.join(', ') });
+                              }}
+                              className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="font-mono font-semibold text-slate-800 truncate">
+                              {t.epc}
+                            </span>
+                            {t.sku && <span className="text-slate-400 truncate">({t.sku})</span>}
+                          </div>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-200/80 text-slate-700 shrink-0">
+                            {t.status}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <textarea
+                  rows={2}
+                  placeholder="Atau paste banyak EPC (pisahkan koma atau baris baru)..."
                   value={generateForm.epc_list}
                   onChange={(e) => setGenerateForm({ ...generateForm, epc_list: e.target.value })}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono text-slate-900 focus:bg-white focus:outline-none"
