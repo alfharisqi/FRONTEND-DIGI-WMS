@@ -45,21 +45,30 @@ export default function GateSecurityPage({
   const [cancelReason, setCancelReason] = useState('');
   const [cancelling, setCancelling] = useState(false);
 
+  // State EPC Siap Lewat Gerbang (Dari Meja Packing & Meja Kasir POS)
+  const [readyEpcs, setReadyEpcs] = useState([]);
+  const [inStockEpcs, setInStockEpcs] = useState([]);
+  const [scanningEpc, setScanningEpc] = useState(false);
+
   // 1. Fetch Data Gate Passes, Gate Events & Available Tags
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [gpRes, geRes, tagsRes] = await Promise.all([
+      const [gpRes, geRes, tagsRes, readyRes] = await Promise.all([
         fetch(`${API_BASE_URL}/gate-passes`),
         fetch(`${API_BASE_URL}/gate/events?limit=10`),
         fetch(`${API_BASE_URL}/tags`).catch(() => null),
+        fetch(`${API_BASE_URL}/gate/ready-epcs`).catch(() => null),
       ]);
       const gpJson = await gpRes.json();
       const geJson = await geRes.json();
       const tagsJson = tagsRes ? await tagsRes.json().catch(() => ({})) : {};
+      const readyJson = readyRes ? await readyRes.json().catch(() => ({})) : {};
 
       setGatePasses(gpJson.data || []);
       setGateEvents(geJson.data || []);
+      setReadyEpcs(Array.isArray(readyJson.data?.ready) ? readyJson.data.ready : []);
+      setInStockEpcs(Array.isArray(readyJson.data?.in_stock) ? readyJson.data.in_stock : []);
       const rawTags = Array.isArray(tagsJson.data) ? tagsJson.data : [];
       setAvailableTags(
         rawTags.filter((t) => ['IN_STOCK', 'RESERVED'].includes(String(t.status || '').toUpperCase()))
@@ -94,12 +103,95 @@ export default function GateSecurityPage({
     }
   }, [lastEvent]);
 
-  // 2. Handler Verifikasi Cepat Gate Pass
+  // 2. Handler Scan Gerbang Cerdas (Mendukung EPC Barang Langsung ATAU Nomor Gate Pass)
+  const handleDirectEpcGateScan = async (epcToScan) => {
+    const epc = String(epcToScan || inputCode || '').trim();
+    if (!epc) {
+      showNotification?.('Silakan pilih atau tempel kode EPC RFID barang!', 'warn');
+      return;
+    }
+
+    setScanningEpc(true);
+    setVerifying(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/gate/scan-epc`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          epc,
+          gate_id: 'GATE-01',
+          antenna_info: 'Antena 1 & 2 (Portal Gerbang RFID)',
+          rssi: '-48 dBm',
+          operator_name: currentUser?.full_name || 'Sensor Antena Gerbang RFID',
+        }),
+      });
+      const json = await res.json();
+
+      if (res.ok && json.success) {
+        showNotification?.(json.message, 'success');
+        setVerificationResult({
+          status: 'ok',
+          is_valid: true,
+          verification_status: 'AUTHORIZED',
+          message: json.message,
+          data: json.data?.gate_pass || {
+            pass_code: 'OTOMATIS VIA EPC',
+            reference_resi: json.data?.reference_doc || '-',
+            customer_or_destination: json.data?.product_name || epc,
+            courier: 'Sensor Antena Gerbang RFID',
+          },
+        });
+      } else if (res.status === 403 || json.alarm_triggered) {
+        showNotification?.(json.message, 'error');
+        setVerificationResult({
+          status: 'error',
+          is_valid: false,
+          verification_status: 'ALARM BREACH (BELUM BAYAR / BELUM PACKING)',
+          message: json.message,
+          data: {
+            pass_code: 'TANPA IZIN',
+            reference_resi: json.data?.tag_status || 'IN_STOCK',
+            customer_or_destination: json.data?.product_name || epc,
+            courier: 'GERBANG DIKUNCI & SIRINE AKTIF',
+          },
+        });
+      } else {
+        showNotification?.(json.message || 'Gagal memindai EPC di gerbang', 'warn');
+        setVerificationResult({
+          status: 'warn',
+          is_valid: false,
+          verification_status: json.gate_action || 'DITOLAK',
+          message: json.message,
+        });
+      }
+      await fetchData();
+    } catch (err) {
+      console.error('Error direct EPC gate scan:', err);
+      showNotification?.('Gagal menghubungi sensor gerbang di server', 'error');
+    } finally {
+      setScanningEpc(false);
+      setVerifying(false);
+    }
+  };
+
   const handleVerifyPass = async (codeToVerify) => {
     const code = (codeToVerify || inputCode).trim();
     if (!code) {
-      showNotification?.('Silakan masukkan atau scan nomor Gate Pass / No. Resi!', 'warn');
+      showNotification?.('Silakan masukkan kode EPC Barang atau Nomor Gate Pass!', 'warn');
       return;
+    }
+
+    // Jika yang dimasukkan adalah EPC Barang (bukan GP-... atau POS-... atau RESI-...),
+    // langsung proses lewat Sensor Antena EPC Gerbang!
+    const upper = code.toUpperCase();
+    const looksLikeGatePassOrDoc =
+      upper.startsWith('GP-') ||
+      upper.startsWith('POS-') ||
+      upper.startsWith('RESI-') ||
+      upper.startsWith('ORD-');
+
+    if (!looksLikeGatePassOrDoc) {
+      return handleDirectEpcGateScan(code);
     }
 
     setVerifying(true);
@@ -452,19 +544,148 @@ export default function GateSecurityPage({
       >
         <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-2.5">
-            <span className="text-xl">🔍</span>
+            <span className="text-xl">📡</span>
             <div>
-              <h2 className="text-sm font-bold tracking-wide uppercase">Terminal Verifikasi Scanner Gerbang (Satpam)</h2>
-              <p className="text-[11px] text-slate-400">Arahkan barcode scanner atau ketik kode Gate Pass sebelum gerbang dibuka</p>
+              <h2 className="text-sm font-bold tracking-wide uppercase">Sensor Antena Gerbang RFID Otomatis (Langsung Baca EPC Barang)</h2>
+              <p className="text-[11px] text-slate-400">Klik 1x pada EPC barang dari Meja Packing / Meja Kasir di bawah untuk langsung melewati gerbang keluar!</p>
             </div>
           </div>
-          <span className="text-xs font-mono bg-slate-800 text-blue-400 px-3 py-1 rounded-lg border border-slate-700">
-            MODE: LIVE SCANNER
+          <span className="text-xs font-mono bg-emerald-950 text-emerald-400 px-3 py-1 rounded-lg border border-emerald-700">
+            MODE: AUTO EPC GATE READER
           </span>
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Input Scanner */}
+          {/* PANEL 1-KLIK: BARANG DARI MEJA PACKING & MEJA KASIR YANG SIAP LEWAT GERBANG */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Kolom Kiri: Barang SAH dari Meja Packing & Meja Kasir */}
+            <div className="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🟢</span>
+                  <div>
+                    <h3 className="text-xs font-extrabold text-emerald-950 uppercase tracking-wide">
+                      Barang Siap Keluar (Dari Packing & Kasir POS)
+                    </h3>
+                    <p className="text-[11px] text-emerald-700">
+                      Status: <code className="font-bold">AUTHORIZED_OUT</code> — Klik untuk lewat gerbang (Lampu Hijau)
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-600 text-white">
+                  {readyEpcs.length} Unit
+                </span>
+              </div>
+
+              {readyEpcs.length === 0 ? (
+                <div className="p-4 rounded-xl bg-white/80 border border-emerald-100 text-center text-xs text-slate-500">
+                  Belum ada barang di meja Packing / Kasir yang menunggu keluar gerbang.
+                  <span className="block text-[11px] text-slate-400 mt-0.5">
+                    (Selesaikan Packing atau Checkout Kasir POS terlebih dahulu)
+                  </span>
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {readyEpcs.map((item) => (
+                    <div
+                      key={item.epc}
+                      className="p-3 rounded-xl bg-white border border-emerald-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono font-bold text-xs text-slate-900">{item.epc}</span>
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            {item.source_channel === 'MEJA_KASIR_POS'
+                              ? '🛒 Meja Kasir POS'
+                              : item.source_channel === 'MEJA_PACKING'
+                              ? '📦 Meja Packing'
+                              : '🚚 Pengiriman'}
+                          </span>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-700 mt-0.5 truncate">
+                          {item.sku} — {item.product_name}
+                          {item.reference_doc ? ` (${item.reference_doc})` : ''}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={scanningEpc}
+                        onClick={() => {
+                          setInputCode(item.epc);
+                          handleDirectEpcGateScan(item.epc);
+                        }}
+                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition shrink-0 flex items-center justify-center gap-1.5"
+                      >
+                        <span>🚶‍♂️</span>
+                        <span>Lewati Gerbang (Keluar)</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Kolom Kanan: Uji Barang di Rak (Belum Bayar / Belum Packing -> Akan Bunyi Alarm!) */}
+            <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">🚨</span>
+                  <div>
+                    <h3 className="text-xs font-extrabold text-rose-950 uppercase tracking-wide">
+                      Simulasi Barang Rak Lewat Tanpa Izin (Anti-Maling)
+                    </h3>
+                    <p className="text-[11px] text-rose-700">
+                      Status: <code className="font-bold">IN_STOCK / RESERVED</code> — Jika lewat gerbang, Sirine Alarm menyala!
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-rose-600 text-white">
+                  {inStockEpcs.length} Unit
+                </span>
+              </div>
+
+              {inStockEpcs.length === 0 ? (
+                <div className="p-4 rounded-xl bg-white/80 border border-rose-100 text-center text-xs text-slate-500">
+                  Tidak ada stok di rak untuk diuji.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {inStockEpcs.slice(0, 5).map((item) => (
+                    <div
+                      key={item.epc}
+                      className="p-3 rounded-xl bg-white border border-rose-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-xs text-slate-900">{item.epc}</span>
+                          <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                            {item.tag_status} (Rak {item.rack_code || '-'})
+                          </span>
+                        </div>
+                        <p className="text-xs font-semibold text-slate-700 mt-0.5 truncate">
+                          {item.sku} — {item.product_name}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={scanningEpc}
+                        onClick={() => {
+                          setInputCode(item.epc);
+                          handleDirectEpcGateScan(item.epc);
+                        }}
+                        className="px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-sm transition shrink-0 flex items-center justify-center gap-1.5"
+                      >
+                        <span>🚨</span>
+                        <span>Uji Bawa Lewat Gerbang</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Input Scanner Manual (Bisa Ketik EPC Langsung ATAU Nomor Gate Pass) */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
               <input
@@ -472,7 +693,7 @@ export default function GateSecurityPage({
                 value={inputCode}
                 onChange={(e) => setInputCode(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleVerifyPass()}
-                placeholder="Scan Barcode / Masukkan Kode Gate Pass (cth: GP-POS-7261 atau GP-XXXX-XXXX)..."
+                placeholder="Tempel Kode EPC Barang langsung (cth: E28011602000000000000002) atau Kode Gate Pass..."
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-sm font-mono text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium tracking-wide shadow-inner"
               />
               <span className="absolute left-3.5 top-3.5 text-base text-slate-400">🏷️</span>
@@ -485,12 +706,12 @@ export default function GateSecurityPage({
               {verifying ? (
                 <>
                   <span className="animate-spin">⏳</span>
-                  <span>Memeriksa...</span>
+                  <span>Memindai...</span>
                 </>
               ) : (
                 <>
-                  <span>🔎</span>
-                  <span>Periksa Keabsahan Izin</span>
+                  <span>📡</span>
+                  <span>Scan EPC / Gate Pass di Gerbang</span>
                 </>
               )}
             </button>
