@@ -364,7 +364,10 @@ export default function DashboardOverviewPage({
     return (
       <div className="space-y-6">
         {/* Compact Clean Header */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+        <div
+          data-tour="dashboard-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm"
+        >
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
@@ -403,8 +406,11 @@ export default function DashboardOverviewPage({
           </div>
         </div>
 
-        {/* 4 Clean Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* 5 Clean Metric Cards (MVP 2 Enhanced) */}
+        <div
+          data-tour="dashboard-kpi-cards"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
+        >
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <span>Total Stok Fisik</span>
@@ -433,7 +439,7 @@ export default function DashboardOverviewPage({
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
               <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {kpis.totalInbound || 320}
+                {kpis.totalInbound ?? 0}
               </span>
               <span className="text-xs text-slate-400 font-medium">unit</span>
             </div>
@@ -452,7 +458,7 @@ export default function DashboardOverviewPage({
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
               <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {kpis.activeRfidTags}
+                {kpis.activeRfidTags ?? 0}
               </span>
               <span className="text-xs text-slate-400 font-medium">chip</span>
             </div>
@@ -465,24 +471,91 @@ export default function DashboardOverviewPage({
           <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
             <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
               <span>Keamanan Gerbang</span>
-              <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                Portal Standby
+              <span
+                className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
+                  (kpis.gateAlarmsCount || 0) > 0
+                    ? 'text-rose-700 bg-rose-50'
+                    : 'text-emerald-700 bg-emerald-50'
+                }`}
+              >
+                {(kpis.gateAlarmsCount || 0) > 0 ? 'Alarm Aktif' : 'Portal Standby'}
               </span>
             </div>
             <div className="mt-3 flex items-baseline space-x-2">
-              <span className="text-2xl font-extrabold text-emerald-600 tracking-tight">
-                TERLINDUNGI
+              <span
+                className={`text-2xl font-extrabold tracking-tight ${
+                  (kpis.gateAlarmsCount || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'
+                }`}
+              >
+                {(kpis.gateAlarmsCount || 0) > 0 ? 'WASPADA' : 'TERLINDUNGI'}
               </span>
             </div>
             <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
-              <span className="text-emerald-500 font-bold">✓</span>
-              <span>{kpis.gateAlarmsCount || 0} alarm sirine tercatat</span>
+              <span className={(kpis.gateAlarmsCount || 0) > 0 ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold'}>
+                {(kpis.gateAlarmsCount || 0) > 0 ? '🚨' : '✓'}
+              </span>
+              <span>{kpis.gateAlarmsCount ?? 0} alarm aktif di database</span>
+            </p>
+          </div>
+
+          {/* Card 5 (MVP 2 - Orang 4): Gate Pass Aktif */}
+          <div
+            onClick={() => switchTab?.('gate-security')}
+            className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-blue-400 hover:shadow-md cursor-pointer transition group"
+          >
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
+              <span>Gate Pass Aktif</span>
+              <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md font-bold text-[11px] group-hover:bg-blue-600 group-hover:text-white transition">
+                MVP 2 ↗
+              </span>
+            </div>
+            <div className="mt-3 flex items-baseline space-x-2">
+              <span className="text-3xl font-extrabold text-blue-600 tracking-tight">
+                {kpis.activeGatePasses ?? 0}
+              </span>
+              <span className="text-xs text-slate-400 font-medium">izin</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
+              <span className="text-blue-500 font-bold">🛡️</span>
+              <span>Siap verifikasi di pos gerbang</span>
             </p>
           </div>
         </div>
 
+        {/* Banner Fitur Baru MVP 2: Gate Security & Pass Verification */}
+        <div
+          data-tour="dashboard-gate-banner"
+          className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        >
+          <div className="flex items-center space-x-3.5">
+            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-xl shrink-0">
+              🛡️
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="text-xs font-extrabold tracking-wider uppercase text-blue-400">
+                  Fase 2: Outbound & Security Gate
+                </span>
+                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                  Aktif
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Pastikan setiap barang keluar memiliki <strong>Gate Pass resmi</strong> dengan status tag <code>AUTHORIZED_OUT</code> sebelum melintasi portal RFID.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => switchTab?.('gate-security')}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/30 transition shrink-0 flex items-center space-x-1.5"
+          >
+            <span>Buka Terminal Pos Satpam</span>
+            <span>→</span>
+          </button>
+        </div>
+
         {/* Main Grid: Chart (65%) & Low Stock Alert (35%) */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div data-tour="dashboard-analytics-grid" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Sisi Kiri: Grafik Tren Mutasi Stok Ramping */}
           <div className="lg:col-span-2 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between mb-4">

@@ -84,7 +84,10 @@ export default function StockByRackPage({
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+      <div
+        data-tour="stock-rack-header"
+        className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+      >
         <div className="flex flex-col sm:flex-row justify-between gap-4">
           <div>
             <h2 className="text-xl font-bold text-slate-900">
@@ -121,7 +124,7 @@ export default function StockByRackPage({
       </div>
 
       {/* Ringkasan */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div data-tour="stock-rack-summary" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
           <p className="text-xs text-slate-500 font-semibold uppercase">
             Total Stok di Rak
@@ -154,7 +157,10 @@ export default function StockByRackPage({
       </div>
 
       {/* Tabel stok */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div
+        data-tour="stock-rack-table"
+        className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+      >
         <div className="p-5 border-b border-slate-200">
           <div className="flex flex-col sm:flex-row gap-3 justify-between">
             <div>

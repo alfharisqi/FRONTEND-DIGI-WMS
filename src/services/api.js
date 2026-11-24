@@ -1,4 +1,6 @@
 
+import { tokenStorageKey } from '../config/authSession';
+
 const configuredApiUrl =
   import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -15,13 +17,14 @@ export const API_BASE_URL = normalizedApiUrl.endsWith('/api')
  * Otomatis mengirim JWT jika pengguna sudah login.
  */
 export async function apiRequest(endpoint, options = {}) {
-  // Normalisasi endpoint agar selalu diawali slash.
-  const normalizedEndpoint = endpoint.startsWith('/')
+  // Normalisasi endpoint agar selalu diawali slash dan tidak menduplikasi prefix /api.
+  const withLeadingSlash = endpoint.startsWith('/')
     ? endpoint
     : `/${endpoint}`;
+  const normalizedEndpoint = withLeadingSlash.replace(/^\/api(?=\/|$)/, '') || '/';
 
   // Ambil token JWT dari localStorage.
-  const token = localStorage.getItem('digiwms_token');
+  const token = localStorage.getItem(tokenStorageKey);
 
   const response = await fetch(
     `${API_BASE_URL}${normalizedEndpoint}`,

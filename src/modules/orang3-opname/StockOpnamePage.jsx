@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { apiRequest } from '../../services/api';
+import { API_BASE_URL, apiRequest } from '../../services/api';
 
 export default function StockOpnamePage({
   activeMenu = 'rfid-opname',
@@ -20,28 +20,35 @@ export default function StockOpnamePage({
   const [sessions, setSessions] = useState([]);
   const [selectedApprovalSession, setSelectedApprovalSession] = useState(null);
 
-  // Gate Alarm State (Persis Template Awal digiwms.html)
   const [gateStatus, setGateStatus] = useState('AMAN'); // 'AMAN' | 'ALARM' | 'CROSSREAD'
-  const [gateIncidents, setGateIncidents] = useState([
-    {
-      time: '12 Mei 2026 14:20',
-      epc: 'E280-1160-2000-042E',
-      name: 'Gaming Headset 7.1',
-      antenna: 'Antena 1 & 2 (Keluar)',
-      rssi: '-55 dBm',
-      status: 'Authorized Out',
-      action: 'Lolos Verifikasi',
-    },
-    {
-      time: '12 Mei 2026 11:05',
-      epc: 'E280-1160-2000-055F',
-      name: 'SSD External 1TB',
-      antenna: 'Antena 1 & 2 (Keluar)',
-      rssi: '-50 dBm',
-      status: 'Authorized Out',
-      action: 'Lolos Verifikasi',
-    },
-  ]);
+  const [gateIncidents, setGateIncidents] = useState([]);
+
+  const fetchRealGateEvents = async () => {
+    try {
+      const json = await apiRequest('/api/gate/events?limit=20');
+      const events = Array.isArray(json.data) ? json.data : [];
+      if (events.length > 0) {
+        setGateIncidents(
+          events.map((evt) => ({
+            time: evt.event_time
+              ? new Date(evt.event_time).toLocaleString('id-ID')
+              : '-',
+            epc: evt.epc || '-',
+            name: evt.item_name || `Gate Pass ${evt.pass_code || '-'}`,
+            antenna: evt.antenna_info || 'Antena 1 & 2 (Keluar)',
+            rssi: evt.rssi || '-52 dBm',
+            status:
+              evt.authorization_status === 'UNAUTHORIZED'
+                ? 'ILLEGAL / UNPAID'
+                : 'Authorized Out',
+            action: evt.action_taken || 'Lolos Verifikasi',
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Error loading real gate events:', err);
+    }
+  };
 
   const audioCtxRef = useRef(null);
 
@@ -201,6 +208,8 @@ const handleSelectApprovalSession = (session) => {
 useEffect(() => {
   if (activeMenu === 'rfid-opname') {
     fetchSessions();
+  } else if (activeMenu === 'rfid-gate') {
+    fetchRealGateEvents();
   }
 }, [activeMenu, lastEvent]);
 
@@ -464,7 +473,10 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
   if (activeMenu === 'rfid-opname') {
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div
+          data-tour="opname-gate-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+        >
           <div>
             <div className="flex items-center space-x-2">
               <h2 className="text-xl font-bold text-slate-900">
@@ -639,7 +651,10 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
 
 
         {/* Opname Discrepancy Results Table */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          data-tour="opname-gate-main"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+        >
           <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
               <h3 className="font-bold text-slate-900 text-base">
@@ -723,7 +738,10 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
   // ============================================================================
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+      <div
+        data-tour="opname-gate-header"
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+      >
         <div>
           <div className="flex items-center space-x-2">
             <h2 className="text-xl font-bold text-slate-900">
@@ -756,6 +774,7 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
 
       {/* Interactive Gate Strobe Visualization Box */}
       <div
+        data-tour="opname-gate-main"
         className={`bg-slate-900 rounded-3xl p-6 sm:p-8 text-white shadow-2xl border-4 transition-all duration-300 relative overflow-hidden ${
           gateStatus === 'ALARM'
             ? 'border-rose-500 animate-strobe-red'

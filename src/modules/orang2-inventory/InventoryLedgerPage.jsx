@@ -19,49 +19,34 @@ export default function InventoryLedgerPage({
     max_capacity: '',
   });
 
-  // Putaway Form State
-  const [epcCode, setEpcCode] = useState('E280689400004001A1B2C301');
+  // Putaway Form State (Mendukung satuan & massal/bulk)
+  const [epcCode, setEpcCode] = useState('');
   const [targetLoc, setTargetLoc] = useState('');
+  const [allTags, setAllTags] = useState([]);
+  const [pickingOrders, setPickingOrders] = useState([]);
+  const [selectedPutawayEpcs, setSelectedPutawayEpcs] = useState([]);
+  const [isBulkPutaway, setIsBulkPutaway] = useState(false);
 
-  // Shipping & Outbound State (from digiwms.html)
-  const [shippingList, setShippingList] = useState([
-    {
-      resi: 'JX-8839-2910',
-      dest: 'PT Toko Makmur Jaya (Jakarta)',
-      courier: 'JNE Regular',
-      date: '12 Mei 2026',
-      gatePass: 'GP-8839-OK',
-      status: 'Terkirim',
-    },
-    {
-      resi: 'SPX-9921-3341',
-      dest: 'CV Digital Solusindo (Bandung)',
-      courier: 'SiCepat Ekspres',
-      date: '12 Mei 2026',
-      gatePass: 'GP-9921-OK',
-      status: 'Dalam Perjalanan',
-    },
-    {
-      resi: 'JX-9920-1182',
-      dest: 'Surya Abadi Games (Surabaya)',
-      courier: 'JNE Express',
-      date: '13 Mei 2026',
-      gatePass: 'GP-9920-OK',
-      status: 'Siap Kirim (Gate Pass Aktif)',
-    },
-  ]);
+  // Riwayat pengiriman dimuat dari backend Outbound.
+  const [shippingList, setShippingList] = useState([]);
+  const [isSavingShipping, setIsSavingShipping] = useState(false);
   const [showShippingModal, setShowShippingModal] = useState(false);
   const [shipForm, setShipForm] = useState({
-    resi: `JX-${Math.floor(1000 + Math.random() * 9000)}-7788`,
+    resi: '',
     courier: 'JNE Express',
     dest: '',
+    epcs: '',
+    total_amount: '0',
   });
 
   const fetchInventoryData = async () => {
     try {
-      const [locRes, ledRes] = await Promise.all([
+      const [locRes, ledRes, shipRes, tagsRes, pickRes] = await Promise.all([
         fetch(`${API_BASE_URL}/locations`),
         fetch(`${API_BASE_URL}/inventory/ledger`),
+        fetch(`${API_BASE_URL}/outbound/shipments`),
+        fetch(`${API_BASE_URL}/tags`).catch(() => null),
+        fetch(`${API_BASE_URL}/outbound/picking-orders`).catch(() => null),
       ]);
 
       if (!locRes.ok) {
@@ -76,6 +61,37 @@ export default function InventoryLedgerPage({
       if (ledRes.ok) {
         const ledJson = await ledRes.json();
         setLedger(Array.isArray(ledJson.data) ? ledJson.data : []);
+      }
+
+      if (tagsRes && tagsRes.ok) {
+        const tagsJson = await tagsRes.json().catch(() => ({}));
+        setAllTags(Array.isArray(tagsJson.data) ? tagsJson.data : []);
+      }
+
+      if (pickRes && pickRes.ok) {
+        const pickJson = await pickRes.json().catch(() => ({}));
+        setPickingOrders(Array.isArray(pickJson.data) ? pickJson.data : []);
+      }
+
+      if (shipRes.ok) {
+        const shipJson = await shipRes.json();
+        setShippingList(
+          (Array.isArray(shipJson.data) ? shipJson.data : []).map((row) => ({
+            id: row.id,
+            resi: row.invoice_or_resi,
+            dest: row.customer_or_destination || '-',
+            courier: row.courier || '-',
+            date: row.created_at
+              ? new Date(row.created_at).toLocaleString('id-ID')
+              : '-',
+            gatePass: row.gate_pass_number || null,
+            gatePassValid: row.gate_pass_valid === true,
+            totalItems: Number(row.total_items || 0),
+            totalAmount: Number(row.total_amount || 0),
+            items: Array.isArray(row.items) ? row.items : [],
+            status: row.shipping_status || 'SIAP_KIRIM',
+          }))
+        );
       }
     } catch (err) {
       console.error('Error loading Inventory & Ledger:', err);
@@ -100,32 +116,59 @@ export default function InventoryLedgerPage({
 
   const handlePutaway = async (e) => {
     e.preventDefault();
-    if (!epcCode.trim() || !targetLoc) {
-      showNotification?.('Masukkan EPC dan pilih rak tujuan.', 'error');
+    const typedEpcs = epcCode
+      .split(/[\n,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const epcQueue = [...new Set([...selectedPutawayEpcs, ...typedEpcs])];
+
+    if (epcQueue.length === 0 || !targetLoc) {
+      showNotification?.('Pilih minimal satu EPC atau ketik EPC, lalu pilih rak tujuan.', 'error');
       return;
     }
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ epc: epcCode.trim(), location_code: targetLoc }),
-      });
+    setIsBulkPutaway(true);
+    let okCount = 0;
+    let failCount = 0;
+    let lastError = '';
 
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.message || 'Gagal memproses Putaway.');
+    try {
+      for (const epc of epcQueue) {
+        const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ epc, location_code: targetLoc }),
+        });
+        const json = await res.json().catch(() => ({}));
+        if (res.ok) {
+          okCount += 1;
+        } else {
+          failCount += 1;
+          lastError = json.message || `Gagal putaway ${epc}`;
+        }
       }
 
-      showNotification?.(
-        json.message || `Tag ${epcCode} berhasil ditempatkan di ${targetLoc}`,
-        'success'
-      );
       await fetchInventoryData();
-      setEpcCode('');
+      setSelectedPutawayEpcs([]);
+      if (okCount > 0 && failCount === 0) {
+        setEpcCode('');
+        showNotification?.(
+          `${okCount} barang berhasil ditempatkan di ${targetLoc}.`,
+          'success'
+        );
+      } else if (okCount > 0 && failCount > 0) {
+        showNotification?.(
+          `${okCount} berhasil, ${failCount} gagal (${lastError}).`,
+          'warn'
+        );
+      } else {
+        showNotification?.(lastError || 'Gagal memproses Putaway.', 'error');
+      }
     } catch (err) {
       console.error('Putaway error:', err);
       showNotification?.(err.message || 'Terjadi kesalahan saat Putaway.', 'error');
+    } finally {
+      setIsBulkPutaway(false);
     }
   };
 
@@ -178,31 +221,502 @@ export default function InventoryLedgerPage({
     }
   };
 
-  const handleAddShipping = (e) => {
+  // Cetak surat jalan berdasarkan data shipment yang dikembalikan backend.
+  // Perubahan hanya pada template dokumen cetak; alur API dan transaksi Outbound tetap.
+  const handlePrintShipping = (shipment) => {
+    const printWindow = window.open('', '_blank', 'width=980,height=760');
+    if (!printWindow) {
+      showNotification?.('Popup diblokir browser. Izinkan popup untuk mencetak surat jalan.', 'error');
+      return;
+    }
+
+    const escapeHtml = (value) => String(value ?? '-').replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    }[char]));
+
+    const formatDate = (value) => {
+      if (!value || value === '-') return '-';
+      const parsed = new Date(value);
+      return Number.isNaN(parsed.getTime())
+        ? escapeHtml(value)
+        : escapeHtml(parsed.toLocaleString('id-ID', {
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }));
+    };
+
+    const items = Array.isArray(shipment.items) ? shipment.items : [];
+    const itemRows = items.length
+      ? items.map((item, index) => `
+          <tr>
+            <td class="cell-number">${index + 1}</td>
+            <td class="cell-mono">${escapeHtml(item.epc)}</td>
+            <td class="cell-mono">${escapeHtml(item.sku)}</td>
+            <td>${escapeHtml(item.product_name)}</td>
+            <td class="cell-qty">${Number(item.qty || 1)}</td>
+          </tr>`).join('')
+      : '<tr><td colspan="5" class="empty-row">Rincian barang tidak tersedia pada data riwayat ini.</td></tr>';
+
+    const totalItems = Number(shipment.totalItems || items.reduce(
+      (sum, item) => sum + Number(item.qty || 1), 0
+    ));
+    const gatePassValid = shipment.gatePassValid === true;
+    const documentHtml = `<!doctype html>
+      <html lang="id">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Surat Jalan - ${escapeHtml(shipment.resi)}</title>
+        <style>
+          :root {
+            color-scheme: light;
+            --navy: #142b4a;
+            --blue: #1d4ed8;
+            --blue-soft: #eff6ff;
+            --ink: #172033;
+            --muted: #64748b;
+            --line: #dbe3ee;
+            --surface: #f5f8fc;
+            --green: #047857;
+            --green-soft: #ecfdf5;
+          }
+
+          * { box-sizing: border-box; }
+          html, body { margin: 0; padding: 0; }
+          body {
+            background: #eef2f7;
+            color: var(--ink);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11px;
+            line-height: 1.5;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          .page {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 18px auto;
+            padding: 17mm 17mm 15mm;
+            background: #fff;
+            box-shadow: 0 8px 30px rgba(15, 23, 42, .12);
+          }
+
+          .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 20px;
+            padding-bottom: 16px;
+            border-bottom: 3px solid var(--navy);
+          }
+          .brand { display: flex; align-items: center; gap: 11px; }
+          .brand-mark {
+            display: grid;
+            place-items: center;
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            background: var(--navy);
+            color: #fff;
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: -.5px;
+          }
+          .brand-name {
+            color: var(--navy);
+            font-size: 19px;
+            font-weight: 800;
+            letter-spacing: 1.1px;
+          }
+          .brand-caption {
+            margin-top: 1px;
+            color: var(--muted);
+            font-size: 8px;
+            letter-spacing: 1.25px;
+            text-transform: uppercase;
+          }
+          .document-label { text-align: right; }
+          .document-label strong {
+            display: block;
+            color: var(--navy);
+            font-size: 17px;
+            letter-spacing: .8px;
+          }
+          .document-label span {
+            color: var(--muted);
+            font-size: 8px;
+            letter-spacing: .8px;
+          }
+
+          .title-block { padding: 22px 0 17px; text-align: center; }
+          .title-block h1 {
+            margin: 0;
+            color: var(--navy);
+            font-size: 21px;
+            letter-spacing: 1.4px;
+          }
+          .title-block p {
+            margin: 5px 0 0;
+            color: var(--muted);
+            font-size: 9px;
+          }
+
+          .section-heading {
+            margin: 19px 0 9px;
+            color: var(--navy);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .7px;
+            text-transform: uppercase;
+          }
+          .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 9px 12px;
+          }
+          .info-card {
+            min-height: 55px;
+            padding: 9px 11px;
+            border: 1px solid var(--line);
+            border-radius: 7px;
+            background: #fff;
+          }
+          .info-label {
+            display: block;
+            margin-bottom: 4px;
+            color: var(--muted);
+            font-size: 8px;
+            font-weight: 700;
+            letter-spacing: .6px;
+            text-transform: uppercase;
+          }
+          .info-value {
+            color: var(--ink);
+            font-size: 11px;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+          }
+          .info-value.mono {
+            color: var(--blue);
+            font-family: Consolas, "Courier New", monospace;
+          }
+
+          table.items {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+          }
+          .items th {
+            padding: 9px 8px;
+            border-top: 1px solid var(--navy);
+            border-bottom: 1px solid var(--navy);
+            background: var(--surface);
+            color: var(--navy);
+            font-size: 8px;
+            text-align: left;
+            text-transform: uppercase;
+            letter-spacing: .35px;
+          }
+          .items td {
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--line);
+            color: var(--ink);
+            font-size: 9px;
+            overflow-wrap: anywhere;
+            vertical-align: top;
+          }
+          .items th:nth-child(1) { width: 7%; }
+          .items th:nth-child(2) { width: 27%; }
+          .items th:nth-child(3) { width: 15%; }
+          .items th:nth-child(4) { width: 41%; }
+          .items th:nth-child(5) { width: 10%; }
+          .cell-number, .cell-qty { text-align: center !important; }
+          .cell-qty { font-weight: 800; }
+          .cell-mono {
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 8px !important;
+          }
+          .empty-row { padding: 18px !important; color: var(--muted) !important; text-align: center; }
+
+          .total-row {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            gap: 18px;
+            padding: 12px 4px;
+            border-bottom: 1px solid var(--line);
+          }
+          .total-label { color: var(--muted); font-size: 9px; font-weight: 700; }
+          .total-value { color: var(--navy); font-size: 16px; font-weight: 800; }
+
+          .gate-card {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+            margin-top: 19px;
+            padding: 13px 15px;
+            border: 1px solid ${gatePassValid ? '#a7f3d0' : '#fcd34d'};
+            border-left: 4px solid ${gatePassValid ? '#059669' : '#d97706'};
+            border-radius: 7px;
+            background: ${gatePassValid ? '#ecfdf5' : '#fffbeb'};
+          }
+          .gate-title {
+            color: var(--navy);
+            font-size: 10px;
+            font-weight: 800;
+            letter-spacing: .7px;
+          }
+          .gate-number {
+            margin-top: 4px;
+            color: var(--ink);
+            font-family: Consolas, "Courier New", monospace;
+            font-size: 10px;
+            font-weight: 700;
+            overflow-wrap: anywhere;
+          }
+          .gate-status {
+            flex: 0 0 auto;
+            padding: 6px 12px;
+            border-radius: 20px;
+            background: ${gatePassValid ? '#d1fae5' : '#fef3c7'};
+            color: ${gatePassValid ? '#047857' : '#92400e'};
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: .5px;
+          }
+
+          .signature-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 35px;
+            margin-top: 43px;
+            page-break-inside: avoid;
+          }
+          .signature { text-align: center; }
+          .signature-title {
+            color: var(--ink);
+            font-size: 9px;
+            font-weight: 700;
+          }
+          .signature-space { height: 66px; }
+          .signature-line {
+            width: 78%;
+            margin: 0 auto;
+            border-top: 1px solid #64748b;
+          }
+          .signature-hint { margin-top: 5px; color: var(--muted); font-size: 8px; }
+
+          .footer {
+            display: flex;
+            justify-content: space-between;
+            gap: 15px;
+            margin-top: 26px;
+            padding-top: 9px;
+            border-top: 1px solid var(--line);
+            color: var(--muted);
+            font-size: 8px;
+          }
+
+          @page { size: A4; margin: 0; }
+          @media print {
+            html, body { width: 210mm; min-height: 297mm; background: #fff; }
+            body { font-size: 11px; }
+            .page {
+              width: 210mm;
+              min-height: 297mm;
+              margin: 0;
+              padding: 15mm 16mm 13mm;
+              box-shadow: none;
+            }
+            .info-card, .gate-card, .items th {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
+            }
+            tr, .gate-card, .signature-grid { break-inside: avoid; }
+          }
+        </style>
+      </head>
+      <body>
+        <main class="page">
+          <header class="topbar">
+            <div class="brand">
+              <div class="brand-mark">DW</div>
+              <div>
+                <div class="brand-name">DIGI WMS</div>
+                <div class="brand-caption">Warehouse Management System</div>
+              </div>
+            </div>
+            <div class="document-label">
+              <strong>SURAT JALAN</strong>
+              <span>DOKUMEN PENGIRIMAN BARANG</span>
+            </div>
+          </header>
+
+          <section class="title-block">
+            <h1>SURAT JALAN PENGIRIMAN</h1>
+            <p>Dokumen resmi transaksi pengeluaran barang dari gudang</p>
+          </section>
+
+          <div class="section-heading">Informasi Pengiriman</div>
+          <section class="info-grid">
+            <div class="info-card">
+              <span class="info-label">Nomor Resi / Referensi</span>
+              <div class="info-value mono">${escapeHtml(shipment.resi)}</div>
+            </div>
+            <div class="info-card">
+              <span class="info-label">Tanggal Pengiriman</span>
+              <div class="info-value">${formatDate(shipment.date)}</div>
+            </div>
+            <div class="info-card">
+              <span class="info-label">Tujuan / Penerima</span>
+              <div class="info-value">${escapeHtml(shipment.dest)}</div>
+            </div>
+            <div class="info-card">
+              <span class="info-label">Ekspedisi / Kurir</span>
+              <div class="info-value">${escapeHtml(shipment.courier)}</div>
+            </div>
+            <div class="info-card">
+              <span class="info-label">Status Pengiriman</span>
+              <div class="info-value">${escapeHtml(shipment.status)}</div>
+            </div>
+            <div class="info-card">
+              <span class="info-label">Total Unit</span>
+              <div class="info-value">${totalItems} unit</div>
+            </div>
+          </section>
+
+          <div class="section-heading">Rincian Barang</div>
+          <table class="items">
+            <thead>
+              <tr>
+                <th>No.</th>
+                <th>EPC RFID</th>
+                <th>SKU</th>
+                <th>Nama Produk</th>
+                <th>Qty</th>
+              </tr>
+            </thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+
+          <div class="total-row">
+            <span class="total-label">TOTAL BARANG DIKIRIM</span>
+            <span class="total-value">${totalItems} <span style="font-size:9px;font-weight:600">UNIT</span></span>
+          </div>
+
+          <section class="gate-card">
+            <div>
+              <div class="gate-title">GATE PASS / OTORISASI KELUAR</div>
+              <div class="gate-number">Nomor: ${escapeHtml(shipment.gatePass || 'Belum tersedia')}</div>
+            </div>
+            <div class="gate-status">${gatePassValid ? 'VALID' : 'PERLU VERIFIKASI'}</div>
+          </section>
+
+          <section class="signature-grid">
+            <div class="signature">
+              <div class="signature-title">Petugas Gudang</div>
+              <div class="signature-space"></div>
+              <div class="signature-line"></div>
+              <div class="signature-hint">Nama jelas dan tanda tangan</div>
+            </div>
+            <div class="signature">
+              <div class="signature-title">Penerima / Kurir</div>
+              <div class="signature-space"></div>
+              <div class="signature-line"></div>
+              <div class="signature-hint">Nama jelas dan tanda tangan</div>
+            </div>
+          </section>
+
+          <footer class="footer">
+            <span>Dokumen diterbitkan dari transaksi Outbound DIGI WMS.</span>
+            <span>Harap simpan sebagai bukti pengiriman.</span>
+          </footer>
+        </main>
+      </body>
+      </html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(documentHtml);
+    printWindow.document.close();
+    printWindow.document.title = `Surat Jalan - ${shipment.resi || 'DIGI WMS'}`;
+
+    // Beri waktu browser menyelesaikan layout sebelum membuka dialog cetak.
+    // Guard mencegah dialog cetak terbuka dua kali jika onload dan fallback sama-sama terpanggil.
+    let printStarted = false;
+    const startPrint = () => {
+      if (printStarted || printWindow.closed) return;
+      printStarted = true;
+      printWindow.focus();
+      printWindow.print();
+    };
+    printWindow.onload = startPrint;
+    // Fallback untuk browser yang tidak memicu onload pada document.write().
+    window.setTimeout(startPrint, 500);
+  };
+
+  const handleAddShipping = async (e) => {
     e.preventDefault();
-    const gpCode = `GP-${Math.floor(1000 + Math.random() * 9000)}-OK`;
-    setShippingList([
-      {
-        resi: shipForm.resi,
-        dest: shipForm.dest,
-        courier: shipForm.courier,
-        date: new Date().toLocaleDateString('id-ID', {
-          day: '2-digit',
-          month: 'short',
-          year: 'numeric',
+
+    const epcs = shipForm.epcs
+      .split(/[\n,;]+/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const totalAmount = Number(shipForm.total_amount);
+
+    if (!shipForm.resi.trim() || !shipForm.dest.trim() || epcs.length === 0) {
+      showNotification?.('Nomor resi, tujuan, dan minimal satu EPC wajib diisi.', 'error');
+      return;
+    }
+
+    if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+      showNotification?.('Total pembayaran harus berupa angka minimal 0.', 'error');
+      return;
+    }
+
+    setIsSavingShipping(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/outbound/shipments`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invoice_or_resi: shipForm.resi.trim(),
+          customer_or_destination: shipForm.dest.trim(),
+          courier: shipForm.courier,
+          epcs,
+          total_amount: totalAmount,
         }),
-        gatePass: gpCode,
-        status: 'Siap Kirim (Gate Pass Aktif)',
-      },
-      ...shippingList,
-    ]);
-    showNotification?.(`Pengiriman ${shipForm.resi} & Gate Pass ${gpCode} diterbitkan!`, 'success');
-    setShowShippingModal(false);
-    setShipForm({
-      resi: `JX-${Math.floor(1000 + Math.random() * 9000)}-7788`,
-      courier: 'JNE Express',
-      dest: '',
-    });
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.message || 'Gagal menyimpan pengiriman.');
+      }
+
+      showNotification?.(json.message || 'Pengiriman berhasil disimpan.', 'success');
+      setShowShippingModal(false);
+      setShipForm({
+        resi: '',
+        courier: 'JNE Express',
+        dest: '',
+        epcs: '',
+        total_amount: '0',
+      });
+      await fetchInventoryData();
+    } catch (err) {
+      console.error('Add outbound shipment error:', err);
+      showNotification?.(err.message || 'Terjadi kesalahan saat menyimpan pengiriman.', 'error');
+    } finally {
+      setIsSavingShipping(false);
+    }
   };
 
   const handleExportLedger = () => {
@@ -267,7 +781,10 @@ export default function InventoryLedgerPage({
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div
+          data-tour="inventory-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+        >
           <div>
             <h2 className="text-xl font-bold text-slate-900">Peta & Zona Lokasi Rak Gudang</h2>
             <p className="text-xs text-slate-500 mt-1">
@@ -288,7 +805,10 @@ export default function InventoryLedgerPage({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div
+          data-tour="inventory-main-section"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+        >
           {rackLocations.map((loc) => {
             const capacity = Number(loc.max_capacity || 0);
             const occupied = Number(loc.current_items_count || 0);
@@ -451,21 +971,97 @@ export default function InventoryLedgerPage({
           </div>
         )}
 
-        {/* Form Putaway / Pindah Lokasi Rak */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-900 text-base">
-            Putaway & Transfer Tag RFID Antar-Rak
-          </h3>
-          <p className="text-xs text-slate-500 mt-0.5 mb-4">
-            Pindahkan barang dari Staging Inbound menuju Rak Penyimpanan Utama.
-          </p>
+        {/* Form Putaway / Pindah Lokasi Rak (Mendukung Bulk / Pilih Semua) */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base">
+                Putaway & Transfer Tag RFID Antar-Rak (Satuan / Massal)
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Centang banyak tag dari Staging Inbound (INB01) sekaligus atau paste daftar EPC untuk dipindah ke Rak Penyimpanan Utama.
+              </p>
+            </div>
+            {(() => {
+              const readyPutawayTags = allTags.filter(
+                (t) => String(t.status || '').toUpperCase() === 'ENCODED'
+              );
+              if (readyPutawayTags.length === 0) return null;
+              return (
+                <div className="flex items-center gap-2 text-xs shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedPutawayEpcs(readyPutawayTags.map((t) => t.epc))}
+                    className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold transition"
+                  >
+                    Pilih Semua ({readyPutawayTags.length})
+                  </button>
+                  {selectedPutawayEpcs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedPutawayEpcs([])}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition"
+                    >
+                      Batal ({selectedPutawayEpcs.length})
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+
+          {(() => {
+            const readyPutawayTags = allTags.filter(
+              (t) => String(t.status || '').toUpperCase() === 'ENCODED'
+            );
+            if (readyPutawayTags.length === 0) return null;
+            return (
+              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {readyPutawayTags.map((t) => {
+                  const checked = selectedPutawayEpcs.includes(t.epc);
+                  return (
+                    <label
+                      key={t.id || t.epc}
+                      className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition ${
+                        checked
+                          ? 'bg-blue-50 border-blue-300 text-blue-900'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() =>
+                          setSelectedPutawayEpcs((prev) =>
+                            checked ? prev.filter((e) => e !== t.epc) : [...prev, t.epc]
+                          )
+                        }
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="font-mono font-semibold truncate">{t.epc}</p>
+                        <p className="text-[10px] text-slate-500 truncate">
+                          {t.sku || t.product_name || 'Tag ENCODED'}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           <form onSubmit={handlePutaway} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input
               type="text"
-              required
+              required={selectedPutawayEpcs.length === 0}
               value={epcCode}
               onChange={(e) => setEpcCode(e.target.value)}
-              placeholder="Kode EPC Tag RFID"
+              placeholder={
+                selectedPutawayEpcs.length > 0
+                  ? `${selectedPutawayEpcs.length} EPC terpilih (opsional tambah manual)`
+                  : 'Kode EPC Tag RFID (bisa pisah koma)'
+              }
               className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
             />
             <select
@@ -477,16 +1073,20 @@ export default function InventoryLedgerPage({
               <option value="">Pilih rak tujuan</option>
               {rackLocations.map((l) => (
                 <option key={l.id || l.code} value={l.code}>
-                  {l.code} — {l.name}
+                  {l.code} - {l.name}
                 </option>
               ))}
             </select>
             <button
               type="submit"
-              disabled={rackLocations.length === 0}
+              disabled={rackLocations.length === 0 || isBulkPutaway}
               className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-md transition"
             >
-              Simpan Putaway Rak
+              {isBulkPutaway
+                ? 'Memproses Putaway...'
+                : selectedPutawayEpcs.length > 0
+                ? `Simpan ${selectedPutawayEpcs.length} Tag ke Rak`
+                : 'Simpan Putaway Rak'}
             </button>
           </form>
         </div>
@@ -500,7 +1100,10 @@ export default function InventoryLedgerPage({
   if (activeMenu === 'picking') {
     return (
       <div className="space-y-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div
+          data-tour="inventory-header"
+          className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+        >
           <div>
             <h2 className="text-xl font-bold text-slate-900">Picking & Packing Pesanan</h2>
             <p className="text-xs text-slate-500 mt-1">
@@ -513,12 +1116,11 @@ export default function InventoryLedgerPage({
             }
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
           >
-            <span>📋</span>
             <span>Buat Batch Picking</span>
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div data-tour="inventory-main-section" className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-lg">
@@ -633,7 +1235,10 @@ export default function InventoryLedgerPage({
 
     return (
       <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <div
+          data-tour="inventory-header"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+        >
           <div>
             <h2 className="text-xl font-bold text-slate-900">
               Manajemen Pengiriman & Gate Pass (Outbound)
@@ -646,12 +1251,15 @@ export default function InventoryLedgerPage({
             onClick={() => setShowShippingModal(true)}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
           >
-            <span>➕</span>
+            <span>+</span>
             <span>Buat Pengiriman Baru</span>
           </button>
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div
+          data-tour="inventory-main-section"
+          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+        >
           <div className="p-4 border-b border-slate-200">
             <input
               type="text"
@@ -671,6 +1279,7 @@ export default function InventoryLedgerPage({
                   <th className="p-4">Tanggal Kirim</th>
                   <th className="p-4">Gate Pass</th>
                   <th className="p-4">Status</th>
+                  <th className="p-4">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
@@ -682,13 +1291,29 @@ export default function InventoryLedgerPage({
                     <td className="p-4 text-slate-500">{s.date}</td>
                     <td className="p-4">
                       <span className="bg-emerald-50 text-emerald-700 font-mono text-xs px-2.5 py-1 rounded-lg font-bold">
-                        {s.gatePass}
+                        {s.gatePass || 'Belum tersedia'}
                       </span>
                     </td>
                     <td className="p-4">
-                      <span className="bg-blue-50 text-blue-700 text-xs px-2.5 py-1 rounded-lg font-semibold">
+                      <span
+                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
+                          String(s.status).toUpperCase().includes('SHIPPED') ||
+                          String(s.status).toUpperCase().includes('KELUAR')
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            : 'bg-blue-50 text-blue-700'
+                        }`}
+                      >
                         {s.status}
                       </span>
+                    </td>
+                    <td className="p-4">
+                      <button
+                        type="button"
+                        onClick={() => handlePrintShipping(s)}
+                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold whitespace-nowrap"
+                      >
+                        Cetak Surat Jalan
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -699,7 +1324,7 @@ export default function InventoryLedgerPage({
 
         {showShippingModal && (
           <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-100">
+            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-slate-100">
               <div className="flex justify-between items-center mb-4">
                 <h3 className="font-bold text-lg text-slate-900">
                   Buat Pengiriman & Gate Pass Baru
@@ -708,10 +1333,53 @@ export default function InventoryLedgerPage({
                   onClick={() => setShowShippingModal(false)}
                   className="text-slate-400 hover:text-slate-600 font-bold"
                 >
-                  ✕
+                  ×
                 </button>
               </div>
               <form onSubmit={handleAddShipping} className="space-y-4">
+                {pickingOrders.length > 0 && (
+                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
+                      Tarik Otomatis dari Order Picking & Packing (Opsional)
+                    </label>
+                    <select
+                      defaultValue=""
+                      onChange={(e) => {
+                        const ord = pickingOrders.find((o) => String(o.id) === e.target.value);
+                        if (!ord) return;
+                        const epcsFromOrder = Array.isArray(ord.epcs)
+                          ? ord.epcs
+                          : Array.isArray(ord.items)
+                          ? ord.items.map((it) => it.epc).filter(Boolean)
+                          : [];
+                        setShipForm((prev) => ({
+                          ...prev,
+                          resi: prev.resi || `RESI-${ord.order_number || String(ord.id).slice(0, 6).toUpperCase()}`,
+                          dest:
+                            ord.customer_or_destination &&
+                            !['MENUNGGU_PICKING', 'SEDANG_DIAMBIL', 'SIAP_PACKING', 'SELESAI_PACKING', 'MENUNGGU_PACKING'].includes(
+                              String(ord.customer_or_destination).toUpperCase()
+                            )
+                              ? ord.customer_or_destination
+                              : prev.dest || `Pelanggan ${ord.order_number || ''}`,
+                          epcs: epcsFromOrder.length > 0 ? epcsFromOrder.join('\n') : prev.epcs,
+                        }));
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
+                    >
+                      <option value="">-- Pilih Order Picking untuk isi Resi & EPC otomatis --</option>
+                      {pickingOrders.map((ord) => {
+                        const itemCount = Array.isArray(ord.items) ? ord.items.length : Number(ord.scanned_items || 0);
+                        return (
+                          <option key={ord.id} value={ord.id}>
+                            {ord.order_number || ord.invoice_or_resi || ord.id} — Status: {ord.status} ({itemCount} EPC ter-scan)
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
@@ -754,9 +1422,117 @@ export default function InventoryLedgerPage({
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
                   />
                 </div>
-                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200">
-                  <p className="text-xs text-blue-800">
-                    Menyimpan pengiriman akan menerbitkan <b>Gate Pass resmi</b>, sehingga reader gerbang RFID mengizinkan barang lewat tanpa memicu alarm.
+                <div>
+                  {(() => {
+                    const shippableTags = allTags.filter((t) =>
+                      ['AUTHORIZED_OUT', 'RESERVED', 'IN_STOCK'].includes(
+                        String(t.status || '').toUpperCase()
+                      )
+                    );
+                    const currentEpcs = shipForm.epcs
+                      .split(/[\n,]+/)
+                      .map((s) => s.trim())
+                      .filter(Boolean);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-xs font-semibold text-slate-600 uppercase">
+                            Pilih EPC Barang Massal ({shippableTags.length} tersedia)
+                          </label>
+                          {shippableTags.length > 0 && (
+                            <div className="flex items-center gap-2 text-[11px]">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setShipForm({
+                                    ...shipForm,
+                                    epcs: shippableTags.map((t) => t.epc).join('\n'),
+                                  })
+                                }
+                                className="font-semibold text-blue-600 hover:underline"
+                              >
+                                Pilih Semua
+                              </button>
+                              <span className="text-slate-300">|</span>
+                              <button
+                                type="button"
+                                onClick={() => setShipForm({ ...shipForm, epcs: '' })}
+                                className="font-semibold text-slate-500 hover:underline"
+                              >
+                                Bersihkan
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                        {shippableTags.length > 0 && (
+                          <div className="max-h-28 overflow-y-auto border border-slate-200 rounded-xl p-2 bg-slate-50 space-y-1 mb-2">
+                            {shippableTags.map((t) => {
+                              const checked = currentEpcs.includes(t.epc);
+                              const isAuthOut = String(t.status).toUpperCase() === 'AUTHORIZED_OUT';
+                              return (
+                                <label
+                                  key={t.id || t.epc}
+                                  className="flex items-center justify-between gap-2 px-2 py-1 rounded-lg hover:bg-white cursor-pointer text-[11px]"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => {
+                                        const next = checked
+                                          ? currentEpcs.filter((e) => e !== t.epc)
+                                          : [...currentEpcs, t.epc];
+                                        setShipForm({ ...shipForm, epcs: next.join('\n') });
+                                      }}
+                                      className="rounded border-slate-300 text-blue-600"
+                                    />
+                                    <span className="font-mono font-semibold text-slate-800 truncate">
+                                      {t.epc}
+                                    </span>
+                                  </div>
+                                  <span
+                                    className={`text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0 ${
+                                      isAuthOut
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'bg-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    {t.status}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                  <textarea
+                    required
+                    rows={3}
+                    value={shipForm.epcs}
+                    onChange={(e) => setShipForm({ ...shipForm, epcs: e.target.value })}
+                    placeholder="Atau paste banyak EPC (pisahkan baris baru atau koma)..."
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    Total Pembayaran
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    required
+                    value={shipForm.total_amount}
+                    onChange={(e) => setShipForm({ ...shipForm, total_amount: e.target.value })}
+                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+                  />
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <p className="text-xs text-emerald-800 font-medium">
+                    ✅ <strong>Otorisasi & Gate Pass Otomatis (1-Langkah):</strong> Cukup pilih EPC di sini (baik yang sudah selesai Picking/Packing maupun stok rak). Sistem akan otomatis mengubah status menjadi <code>AUTHORIZED_OUT</code> dan menerbitkan nomor <strong>Gate Pass ACTIVE</strong> untuk langsung diverifikasi Satpam di menu <em>Keamanan & Pass</em>.
                   </p>
                 </div>
                 <div className="flex justify-end space-x-3 pt-4 border-t border-slate-100">
@@ -769,9 +1545,10 @@ export default function InventoryLedgerPage({
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium shadow-md"
+                    disabled={isSavingShipping}
+                    className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium shadow-md disabled:opacity-60"
                   >
-                    Terbitkan & Simpan
+                    {isSavingShipping ? 'Menyimpan...' : 'Terbitkan & Simpan'}
                   </button>
                 </div>
               </form>
@@ -803,7 +1580,10 @@ export default function InventoryLedgerPage({
 
   return (
     <div className="space-y-6">
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div
+        data-tour="inventory-header"
+        className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+      >
         <div>
           <div className="flex items-center space-x-2">
             <h2 className="text-xl font-bold text-slate-900">
@@ -822,12 +1602,14 @@ export default function InventoryLedgerPage({
           onClick={handleExportLedger}
           className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
         >
-          <span>📥</span>
           <span>Export Data Ledger</span>
         </button>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      <div
+        data-tour="inventory-main-section"
+        className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+      >
         <div className="p-4 border-b border-slate-200 flex justify-between gap-3">
           <input
             type="text"

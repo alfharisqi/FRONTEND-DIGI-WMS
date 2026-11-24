@@ -1,26 +1,82 @@
 import React, { useState, useEffect } from 'react';
+import {
+  LayoutDashboard,
+  Truck,
+  Package,
+  MapPin,
+  Layers,
+  ClipboardList,
+  Send,
+  Tag,
+  Radio,
+  Siren,
+  FileText,
+  ShieldCheck,
+  Users,
+  BarChart3,
+  Settings,
+  Image as ImageIcon,
+  BookOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Menu,
+  X,
+  Search,
+  Plus,
+  Bell,
+  Activity,
+  LogOut,
+  Box,
+} from 'lucide-react';
 import { createMqttSubscription } from './config/mqttClient';
 import { API_BASE_URL } from './config/api';
+import { tokenStorageKey, userStorageKey } from './config/authSession';
 import DashboardOverviewPage from './modules/orang4-dashboard/DashboardOverviewPage';
 import LoginPage from './modules/orang4-dashboard/LoginPage';
 import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
+import { inboundRequest } from './modules/orang1-inbound/api';
+import PickingPackingPage from './modules/orang1-picking/PickingPackingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
+
 import PosPage from './modules/orang3-opname/PosPage';
 import ReturnPage from './modules/orang3-opname/ReturnPage';
+import GateSecurityPage from './modules/orang4-dashboard/GateSecurityPage';
+import GuidebookButton from './components/GuidebookButton';
+import { startInteractiveGuidebook } from './lib/guidebook';
+
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('digiwms_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [mqttConnected, setMqttConnected] = useState(false);
   const [lastEvent, setLastEvent] = useState(null);
   const [globalSearch, setGlobalSearch] = useState('');
 
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem('digiwms_sidebar_collapsed', String(next));
+      } catch {
+        // ignore storage errors
+      }
+      return next;
+    });
+  };
+
   // State User Aktif (RBAC Auth — dikelola oleh Orang 4 via Halaman Login Resmi)
   const [currentUser, setCurrentUser] = useState(() => {
     try {
-      const saved = localStorage.getItem('digiwms_user');
+      const saved = localStorage.getItem(userStorageKey);
       return saved ? JSON.parse(saved) : null;
     } catch {
       return null;
@@ -89,8 +145,8 @@ export default function App() {
       // Abaikan jika offline
     }
 
-    localStorage.removeItem('digiwms_user');
-    localStorage.removeItem('digiwms_token');
+    localStorage.removeItem(userStorageKey);
+    localStorage.removeItem(tokenStorageKey);
     setCurrentUser(null);
   };
 
@@ -145,33 +201,19 @@ export default function App() {
   const handleQuickAddItem = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${API_BASE_URL}/products`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(quickItem),
+      const data = await inboundRequest('/products', 'POST', quickItem);
+      showNotification('Barang berhasil ditambahkan!', 'success');
+      setShowQuickAddModal(false);
+      setQuickItem({
+        sku: '',
+        name: '',
+        category: 'Aksesoris Komputer',
+        price_idr: 350000,
+        min_stock: 20,
       });
-      const json = await res.json();
-
-      if (res.ok) {
-        showNotification(json.message || 'Barang berhasil ditambahkan!', 'success');
-        setShowQuickAddModal(false);
-        setQuickItem({
-          sku: '',
-          name: '',
-          category: 'Aksesoris Komputer',
-          price_idr: 350000,
-          min_stock: 20,
-        });
-        setLastEvent({
-          topic: 'digiwms/product/created',
-          payload: json.data,
-          receivedAt: new Date().toLocaleTimeString('id-ID'),
-        });
-      } else {
-        showNotification(json.message || 'Gagal menambah barang', 'error');
-      }
+      setLastEvent({ topic: 'digiwms/product/created', payload: data, receivedAt: new Date().toLocaleTimeString('id-ID') });
     } catch (err) {
-      console.error(err);
+      showNotification(err.message, 'error');
     }
   };
 
@@ -191,11 +233,35 @@ export default function App() {
   }
 
   const navClass = (tabId) =>
-    `nav-item flex items-center space-x-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full text-left ${
+    `nav-item group flex items-center ${
+      sidebarCollapsed ? 'md:justify-center md:px-0 px-3' : 'gap-2.5 px-3'
+    } py-2 rounded-lg text-[13px] font-medium transition-colors w-full text-left ${
       activeTab === tabId
-        ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30'
-        : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+        ? 'bg-blue-600 text-white shadow-sm'
+        : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'
     }`;
+
+  const renderNavItem = (tabId, Icon, label) => (
+    <button
+      key={tabId}
+      type="button"
+      onClick={() => switchTab(tabId)}
+      className={navClass(tabId)}
+      title={sidebarCollapsed ? label : undefined}
+    >
+      <Icon className="w-[18px] h-[18px] shrink-0" strokeWidth={1.75} />
+      <span className={`truncate ${sidebarCollapsed ? 'md:hidden' : ''}`}>{label}</span>
+    </button>
+  );
+
+  const renderSectionLabel = (label) =>
+    sidebarCollapsed ? (
+      <div className="hidden md:block my-2.5 border-t border-slate-800/80 mx-2" />
+    ) : (
+      <p className="px-3 pt-4 pb-1 text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+        {label}
+      </p>
+    );
 
   // Pemetaan Menu Template Awal digiwms.html -> 4 Modul Tim (Tanpa Konflik Git)
   const renderMainContent = () => {
@@ -206,6 +272,19 @@ export default function App() {
           activeMenu={activeTab}
           switchTab={switchTab}
           openAddProductModal={() => setShowQuickAddModal(true)}
+          lastEvent={lastEvent}
+          mqttConnected={mqttConnected}
+          currentUser={currentUser}
+          showNotification={showNotification}
+        />
+      );
+    }
+
+    // Modul Orang 4 - Fase 2: Gate Pass Security Engine & Outbound Gate
+    if (['gate-security', 'gate-pass'].includes(activeTab)) {
+      return (
+        <GateSecurityPage
+          switchTab={switchTab}
           lastEvent={lastEvent}
           mqttConnected={mqttConnected}
           currentUser={currentUser}
@@ -238,8 +317,12 @@ export default function App() {
       );
     }
 
-    // 3. Modul Orang 2 (Penyimpanan Rak, Picking & Packing, Pengiriman Outbound, Ledger Pergerakan)
-    if (['penyimpanan', 'picking', 'pengiriman', 'ledger'].includes(activeTab)) {
+    if (activeTab === 'picking') {
+      return <PickingPackingPage searchQuery={globalSearch} showNotification={showNotification} />;
+    }
+
+    // 3. Modul Orang 2 (Penyimpanan Rak, Pengiriman Outbound, Ledger Pergerakan)
+    if (['penyimpanan', 'pengiriman', 'ledger'].includes(activeTab)) {
       return (
         <InventoryLedgerPage
           activeMenu={activeTab}
@@ -276,115 +359,84 @@ export default function App() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-slate-100 font-sans text-slate-800 antialiased overflow-hidden">
-      {/* ================= SIDEBAR NAVIGATION (PERSIS TEMPLATE AWAL digiwms.html) ================= */}
+    <div className="flex h-screen w-full bg-slate-50 font-sans text-slate-800 antialiased overflow-hidden">
+      {/* Mobile Sidebar Backdrop */}
+      {sidebarOpen && (
+        <div
+          onClick={() => setSidebarOpen(false)}
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-[1px] z-20 md:hidden"
+        />
+      )}
+
+      {/* ================= SIDEBAR NAVIGATION (SIMPLE & COLLAPSIBLE) ================= */}
       <aside
-        className={`w-64 bg-slate-900 text-slate-300 flex flex-col transition-all duration-300 z-30 shrink-0 md:relative absolute inset-y-0 left-0 shadow-xl ${
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
+        className={`bg-slate-900 text-slate-300 flex flex-col transition-all duration-200 z-30 shrink-0 md:relative fixed inset-y-0 left-0 border-r border-slate-800 ${
+          sidebarCollapsed ? 'w-64 md:w-[70px]' : 'w-64 md:w-60'
+        } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}
       >
-        {/* Logo Brand */}
-        <div className="h-16 flex items-center justify-between px-6 bg-slate-950/50 border-b border-slate-800">
-          <div className="flex items-center space-x-3">
-            <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-500/30">
-              <svg
-                className="w-5 h-5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-                />
-              </svg>
+        {/* Logo Brand & Collapse Button */}
+        <div
+          className={`h-14 flex items-center border-b border-slate-800 shrink-0 ${
+            sidebarCollapsed ? 'justify-between md:justify-center px-4 md:px-2' : 'justify-between px-4'
+          }`}
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="bg-blue-600 p-1.5 rounded-lg text-white shrink-0">
+              <Box className="w-4 h-4" strokeWidth={2} />
             </div>
-            <div>
-              <span className="font-bold text-lg text-white tracking-wide">DIGI WMS</span>
-              <span className="block text-[10px] text-blue-400 font-medium">
+            <div className={`min-w-0 ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+              <span className="font-bold text-sm text-white tracking-wide block leading-tight">
+                DIGI WMS
+              </span>
+              <span className="block text-[10px] text-slate-400 truncate">
                 RFID Warehouse & POS
               </span>
             </div>
           </div>
 
+          {!sidebarCollapsed && (
+            <button
+              type="button"
+              onClick={toggleSidebarCollapse}
+              className="hidden md:flex p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              title="Minimize Sidebar"
+            >
+              <PanelLeftClose className="w-4 h-4" strokeWidth={1.75} />
+            </button>
+          )}
+
           <button
+            type="button"
             onClick={() => setSidebarOpen(false)}
-            className="md:hidden text-slate-400 hover:text-white"
+            className="md:hidden p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            title="Tutup Menu"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Navigation Links */}
-        <nav className="flex-1 px-4 py-5 space-y-1 overflow-y-auto custom-scrollbar">
+        <nav
+          data-tour="sidebar-nav"
+          className="flex-1 px-2.5 py-3 space-y-0.5 overflow-y-auto custom-scrollbar"
+        >
           {/* Operasional Utama */}
-          <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mb-1">
-            Menu Utama
-          </p>
+          {!sidebarCollapsed && (
+            <p className="px-3 pb-1 text-[10px] font-semibold tracking-wider text-slate-500 uppercase">
+              Menu Utama
+            </p>
+          )}
 
-          <button onClick={() => switchTab('dashboard')} className={navClass('dashboard')}>
-            <span>📊</span>
-            <span>Dashboard</span>
-          </button>
-
-          <button onClick={() => switchTab('penerimaan')} className={navClass('penerimaan')}>
-            <span>🚚</span>
-            <span>Penerimaan (Inbound)</span>
-            <span className="ml-auto bg-blue-500/20 text-blue-400 text-xs px-2 py-0.5 rounded-full font-semibold">
-              320
-            </span>
-          </button>
-
-          <button onClick={() => switchTab('stok')} className={navClass('stok')}>
-            <span>📦</span>
-            <span>Stok Barang</span>
-          </button>
-
-          <button onClick={() => switchTab('penyimpanan')} className={navClass('penyimpanan')}>
-            <span>📍</span>
-            <span>Penyimpanan (Rak)</span>
-          </button>
-
-          <button onClick={() => switchTab('stok-rak')} className={navClass('stok-rak')}>
-            <span>📊</span>
-            <span>Inventaris Stok per Rak</span>
-          </button>
-
-          <button onClick={() => switchTab('picking')} className={navClass('picking')}>
-            <span>📋</span>
-            <span>Picking & Packing</span>
-          </button>
-
-          <button onClick={() => switchTab('pengiriman')} className={navClass('pengiriman')}>
-            <span>🚀</span>
-            <span>Pengiriman (Outbound)</span>
-            <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-xs px-2 py-0.5 rounded-full font-semibold">
-              280
-            </span>
-          </button>
+          {renderNavItem('dashboard', LayoutDashboard, 'Dashboard')}
+          {renderNavItem('penerimaan', Truck, 'Penerimaan')}
+          {renderNavItem('stok', Package, 'Stok Barang')}
+          {renderNavItem('penyimpanan', MapPin, 'Penyimpanan Rak')}
+          {renderNavItem('stok-rak', Layers, 'Stok per Rak')}
+          {renderNavItem('picking', ClipboardList, 'Picking & Packing')}
+          {renderNavItem('pengiriman', Send, 'Pengiriman')}
 
           {/* RFID & Keamanan Core */}
-          <p className="px-3 text-[11px] font-semibold tracking-wider text-amber-400 uppercase mt-5 mb-1 flex items-center justify-between pt-3">
-            <span>RFID & Gate Core</span>
-            <span className="bg-amber-500/20 text-amber-300 text-[10px] px-1.5 py-0.5 rounded font-bold">
-              UHF 920MHz
-            </span>
-          </p>
-
-          <button onClick={() => switchTab('rfid-tag')} className={navClass('rfid-tag')}>
-            <span>🏷️</span>
-            <span>Tag & Encoding</span>
-          </button>
-
-          <button onClick={() => switchTab('rfid-opname')} className={navClass('rfid-opname')}>
-            <span>📡</span>
-            <span>Opname Handheld</span>
-            <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
-              Auto
-            </span>
-          </button>
+          {renderSectionLabel('RFID & Gerbang')}
 
           <button onClick={() => switchTab('pos')} className={navClass('pos')}>
             <span>🛒</span>
@@ -406,114 +458,139 @@ export default function App() {
               Relay
             </span>
           </button>
+          {renderNavItem('rfid-tag', Tag, 'Tag & Encoding')}
+          {renderNavItem('rfid-opname', Radio, 'Opname Handheld')}
+          {renderNavItem('rfid-gate', Siren, 'Gate & Alarm Live')}
+          {renderNavItem('gate-security', ShieldCheck, 'Keamanan & Pass')}
+          {renderNavItem('ledger', FileText, 'Ledger Pergerakan')}
 
-          <button onClick={() => switchTab('ledger')} className={navClass('ledger')}>
-            <span>📜</span>
-            <span>Ledger Pergerakan</span>
-          </button>
+          {/* Sistem & Analitik */}
+          {renderSectionLabel('Sistem')}
 
-          {/* Sistem & Analitik (Modul Orang 4) */}
-          <p className="px-3 text-[11px] font-semibold tracking-wider text-slate-500 uppercase mt-5 mb-1 pt-3">
-            Sistem & Analitik
-          </p>
+          {isAdminOrSupervisor && renderNavItem('users', Users, 'Manajemen User')}
+          {renderNavItem('laporan', BarChart3, 'Laporan & Analitik')}
+          {renderNavItem('pengaturan', Settings, 'Pengaturan')}
+          {renderNavItem('flyer', ImageIcon, 'Flyer Promosi')}
 
-          {isAdminOrSupervisor && (
-            <button onClick={() => switchTab('users')} className={navClass('users')}>
-              <span>👥</span>
-              <span>Manajemen User (RBAC)</span>
+          <div className="pt-2 mt-2 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={() => {
+                setSidebarOpen(false);
+                setTimeout(() => startInteractiveGuidebook(activeTab), 150);
+              }}
+              title={sidebarCollapsed ? 'Panduan Aplikasi' : undefined}
+              className={`nav-item flex items-center ${
+                sidebarCollapsed ? 'md:justify-center md:px-0 px-3' : 'gap-2.5 px-3'
+              } py-2 rounded-lg text-[13px] font-medium transition-colors w-full text-left text-slate-400 hover:bg-slate-800/80 hover:text-white`}
+            >
+              <BookOpen className="w-[18px] h-[18px] shrink-0" strokeWidth={1.75} />
+              <span className={`truncate ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+                Panduan Aplikasi
+              </span>
             </button>
-          )}
-
-          <button onClick={() => switchTab('laporan')} className={navClass('laporan')}>
-            <span>📈</span>
-            <span>Laporan & Analitik</span>
-          </button>
-
-          <button onClick={() => switchTab('pengaturan')} className={navClass('pengaturan')}>
-            <span>⚙️</span>
-            <span>Pengaturan</span>
-          </button>
-
-          <button onClick={() => switchTab('flyer')} className={navClass('flyer')}>
-            <span>🖼️</span>
-            <span>Flyer Promosi</span>
-          </button>
+          </div>
         </nav>
 
-        {/* Sidebar Footer User Profile + Tombol Logout */}
-        <div className="p-4 bg-slate-950/60 border-t border-slate-800 flex items-center space-x-3">
+        {/* Sidebar Footer User Profile + Logout */}
+        <div
+          data-tour="sidebar-user-profile"
+          className={`p-3 bg-slate-950/40 border-t border-slate-800 flex items-center ${
+            sidebarCollapsed ? 'md:flex-col md:gap-2 justify-between gap-2.5' : 'gap-2.5'
+          }`}
+        >
           <img
             src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80"
             alt="User"
-            className="w-10 h-10 rounded-xl object-cover border border-slate-700"
+            title={`${currentUser.full_name} (${currentUser.role})`}
+            className="w-8 h-8 rounded-lg object-cover border border-slate-700 shrink-0"
           />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-white truncate">{currentUser.full_name}</p>
-            <p className="text-xs text-blue-400 truncate font-mono">{currentUser.role}</p>
+          <div className={`flex-1 min-w-0 ${sidebarCollapsed ? 'md:hidden' : ''}`}>
+            <p className="text-xs font-semibold text-white truncate">{currentUser.full_name}</p>
+            <p className="text-[10px] text-slate-400 truncate font-mono">{currentUser.role}</p>
           </div>
           <button
+            type="button"
             onClick={handleLogout}
-            className="text-xs bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 px-2.5 py-1.5 rounded-lg font-semibold transition"
-            title="Keluar dari Sesi (Logout)"
+            className="p-1.5 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition shrink-0"
+            title="Keluar (Logout)"
           >
-            Keluar
+            <LogOut className="w-4 h-4" strokeWidth={1.75} />
           </button>
         </div>
       </aside>
 
       {/* ================= MAIN CONTENT AREA ================= */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-100">
-        {/* Top Header (Persis Template Awal digiwms.html) */}
-        <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm z-20 shrink-0">
-          <div className="flex items-center space-x-4">
+      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-50">
+        {/* Top Header (Simple & Clean) */}
+        <header className="h-14 bg-white border-b border-slate-200/80 flex items-center justify-between px-4 sm:px-6 z-20 shrink-0">
+          <div className="flex items-center gap-2.5">
+            {/* Mobile Drawer Toggle */}
             <button
+              type="button"
               onClick={() => setSidebarOpen(true)}
-              className="md:hidden text-slate-600 hover:text-slate-900 focus:outline-none text-xl"
+              className="md:hidden p-1.5 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
+              title="Buka Menu"
             >
-              ☰
+              <Menu className="w-5 h-5" strokeWidth={1.75} />
             </button>
 
-            <div className="relative max-w-md w-64 sm:w-80">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
-                🔍
-              </span>
+            {/* Desktop Sidebar Maximize/Minimize Toggle */}
+            <button
+              type="button"
+              onClick={toggleSidebarCollapse}
+              className="hidden md:flex p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition"
+              title={sidebarCollapsed ? 'Maximize Sidebar' : 'Minimize Sidebar'}
+            >
+              {sidebarCollapsed ? (
+                <PanelLeftOpen className="w-[18px] h-[18px]" strokeWidth={1.75} />
+              ) : (
+                <PanelLeftClose className="w-[18px] h-[18px]" strokeWidth={1.75} />
+              )}
+            </button>
+
+            <div data-tour="global-search" className="relative w-52 sm:w-72">
+              <Search
+                className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+                strokeWidth={1.75}
+              />
               <input
                 type="text"
                 value={globalSearch}
                 onChange={(e) => handleGlobalSearch(e.target.value)}
-                placeholder="Cari barang, SKU, EPC RFID, atau lokasi..."
-                className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+                placeholder="Cari SKU, barang, EPC, lokasi..."
+                className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 focus:bg-white transition"
               />
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-3">
-            <button
-              onClick={() => switchTab('rfid-gate')}
-              className="hidden sm:flex items-center space-x-2 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 px-3.5 py-2 rounded-xl text-xs font-semibold shadow-sm transition-all"
-            >
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-              <span>🚨</span>
-              <span>Monitor Gate</span>
-            </button>
+          <div
+            data-tour="header-quick-actions"
+            className="flex items-center gap-1.5 sm:gap-2"
+          >
+            <GuidebookButton activeTab={activeTab} />
 
             <button
+              type="button"
               onClick={() => setShowQuickAddModal(true)}
-              className="hidden sm:flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-medium shadow-md shadow-blue-600/20 transition-all"
+              className="hidden sm:flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-medium transition"
             >
-              <span>➕</span>
+              <Plus className="w-3.5 h-3.5" strokeWidth={2} />
               <span>Tambah Barang</span>
             </button>
 
             <button
-              onClick={() => switchTab('flyer')}
-              className="hidden lg:flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-3.5 py-2 rounded-xl text-xs font-bold shadow-md transition-all"
+              type="button"
+              onClick={() => switchTab('rfid-gate')}
+              className="relative p-2 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition"
+              title="Monitor Gate & Alarm Live"
             >
-              <span>🏷️</span>
-              <span>Promo Rp149rb</span>
+              <Siren className="w-[18px] h-[18px]" strokeWidth={1.75} />
+              <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-rose-500 rounded-full" />
             </button>
 
             <button
+              type="button"
               onClick={() =>
                 showNotification(
                   `Sistem RFID Gate & EMQX Broker: ${
@@ -522,26 +599,32 @@ export default function App() {
                   'info'
                 )
               }
-              className="relative p-2 text-slate-600 hover:bg-slate-100 rounded-xl transition-all"
-              title="Notifikasi Sistem"
+              className="relative p-2 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+              title="Status Notifikasi & EMQX"
             >
-              <span>🔔</span>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+              <Bell className="w-[18px] h-[18px]" strokeWidth={1.75} />
+              {mqttConnected && (
+                <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+              )}
             </button>
 
             <button
+              type="button"
               onClick={openHealthCheckModal}
-              className="flex items-center space-x-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 transition-all"
-              title="Klik untuk Diagnostik Kesehatan Server & EMQX"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 transition"
+              title="Diagnostik Server, Database & EMQX"
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-              <span>☁️ Status Server</span>
+              <Activity className="w-3.5 h-3.5 text-emerald-600" strokeWidth={2} />
+              <span className="hidden sm:inline">Server</span>
             </button>
           </div>
         </header>
 
         {/* Scrollable Content Area */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar">
+        <div
+          data-tour="main-content-area"
+          className="flex-1 overflow-y-auto p-4 sm:p-6 custom-scrollbar"
+        >
           {renderMainContent()}
         </div>
       </main>
