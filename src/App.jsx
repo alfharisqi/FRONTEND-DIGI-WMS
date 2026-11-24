@@ -27,6 +27,7 @@ import {
   Activity,
   LogOut,
   Box,
+  Boxes,
 } from 'lucide-react';
 import { createMqttSubscription } from './config/mqttClient';
 import { API_BASE_URL } from './config/api';
@@ -43,6 +44,7 @@ import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
 import PosPage from './modules/orang3-opname/PosPage';
 import ReturnPage from './modules/orang3-opname/ReturnPage';
 import GateSecurityPage from './modules/orang4-dashboard/GateSecurityPage';
+import MasterBoxPage from './modules/orang4-dashboard/MasterBoxPage';
 import GuidebookButton from './components/GuidebookButton';
 import { startInteractiveGuidebook } from './lib/guidebook';
 
@@ -293,6 +295,16 @@ export default function App() {
       );
     }
 
+    // Modul Master Box / Karton & Break-Pack
+    if (activeTab === 'master-box') {
+      return (
+        <MasterBoxPage
+          lastEvent={lastEvent}
+          showNotification={showNotification}
+        />
+      );
+    }
+
     // 2. Modul Orang 1 (Penerimaan Inbound GRN, Stok Barang, Tag & Encoding RFID)
     if (['penerimaan', 'stok', 'rfid-tag'].includes(activeTab)) {
       return (
@@ -429,6 +441,7 @@ export default function App() {
 
           {renderNavItem('dashboard', LayoutDashboard, 'Dashboard')}
           {renderNavItem('penerimaan', Truck, 'Penerimaan')}
+          {renderNavItem('master-box', Boxes, 'Master Box / Karton')}
           {renderNavItem('stok', Package, 'Stok Barang')}
           {renderNavItem('penyimpanan', MapPin, 'Penyimpanan Rak')}
           {renderNavItem('stok-rak', Layers, 'Stok per Rak')}
