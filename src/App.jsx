@@ -7,6 +7,8 @@ import InboundTaggingPage from './modules/orang1-inbound/InboundTaggingPage';
 import InventoryLedgerPage from './modules/orang2-inventory/InventoryLedgerPage';
 import StockByRackPage from './modules/orang2-inventory/StockByRackPage';
 import StockOpnamePage from './modules/orang3-opname/StockOpnamePage';
+import PosPage from './modules/orang3-opname/PosPage';
+import ReturnPage from './modules/orang3-opname/ReturnPage';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -260,6 +262,16 @@ export default function App() {
       );
     }
 
+    // Modul Orang 3 - Kasir POS
+    if (activeTab === 'pos') {
+    return <PosPage />;
+    }
+
+    // Modul Orang 3 - Retur POS
+  if (activeTab === 'retur') {
+  return <ReturnPage showNotification={showNotification} />;
+  }
+
     return null;
   };
 
@@ -372,6 +384,19 @@ export default function App() {
             <span className="ml-auto bg-emerald-500/20 text-emerald-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
               Auto
             </span>
+          </button>
+
+          <button onClick={() => switchTab('pos')} className={navClass('pos')}>
+            <span>🛒</span>
+            <span>Kasir POS</span>
+            <span className="ml-auto bg-blue-500/20 text-blue-400 text-[10px] px-2 py-0.5 rounded-full font-bold">
+               POS
+           </span>
+          </button>
+
+          <button onClick={() => switchTab('retur')} className={navClass('retur')}>
+            <span>↩️</span>
+            <span>Retur POS</span>
           </button>
 
           <button onClick={() => switchTab('rfid-gate')} className={navClass('rfid-gate')}>
