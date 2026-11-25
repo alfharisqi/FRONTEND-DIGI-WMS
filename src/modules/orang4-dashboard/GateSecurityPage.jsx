@@ -931,6 +931,18 @@ export default function GateSecurityPage({
                 },
               },
               {
+                id: 'created_at',
+                header: 'Waktu Dibuat',
+                accessorFn: (row) => (row.created_at ? new Date(row.created_at).getTime() : 0),
+                cell: ({ row }) => (
+                  <span className="font-mono text-muted-foreground whitespace-nowrap">
+                    {row.original.created_at
+                      ? new Date(row.original.created_at).toLocaleString('id-ID')
+                      : '-'}
+                  </span>
+                ),
+              },
+              {
                 id: 'actions',
                 header: 'Aksi Operator',
                 enableSorting: false,
@@ -985,8 +997,8 @@ export default function GateSecurityPage({
               },
             ]}
             searchPlaceholder="Cari pas, resi, tujuan, kurir..."
-            dateField="valid_until"
-            initialSorting={[{ id: 'valid_until', desc: true }]}
+            dateField="created_at"
+            initialSorting={[{ id: 'created_at', desc: true }]}
             filters={[
               {
                 key: 'status',

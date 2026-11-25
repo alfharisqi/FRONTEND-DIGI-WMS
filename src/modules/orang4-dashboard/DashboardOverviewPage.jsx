@@ -86,14 +86,30 @@ export default function DashboardOverviewPage({
 
   const fetchSummaryAndProducts = async () => {
     try {
-      const [sumRes, prodRes] = await Promise.all([
+      const [sumRes, prodRes, stockRes] = await Promise.all([
         fetch(`${API_BASE_URL}/dashboard/summary`),
         fetch(`${API_BASE_URL}/products`),
+        fetch(`${API_BASE_URL}/inventory/stock`).catch(() => null),
       ]);
       const sumJson = await sumRes.json();
       const prodJson = await prodRes.json();
+      const stockJson = stockRes && stockRes.ok ? await stockRes.json().catch(() => null) : null;
+
+      const ledgerMap = new Map();
+      if (Array.isArray(stockJson?.data)) {
+        stockJson.data.forEach((row) => {
+          ledgerMap.set(row.sku, Number(row.current_stock ?? 0));
+        });
+      }
+
+      const mergedProducts = (prodJson.data || []).map((p) => ({
+        ...p,
+        current_stock: ledgerMap.has(p.sku) ? ledgerMap.get(p.sku) : Number(p.current_stock ?? 0),
+        min_stock: Number(p.min_stock ?? p.min_stock_threshold ?? p.min_stock_alert ?? 20),
+      }));
+
       setSummary(sumJson.data);
-      setProducts(prodJson.data || []);
+      setProducts(mergedProducts);
     } catch (err) {
       console.error('Gagal mengambil ringkasan dashboard:', err);
     } finally {

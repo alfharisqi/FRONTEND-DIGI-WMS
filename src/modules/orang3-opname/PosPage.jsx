@@ -25,8 +25,23 @@ export default function PosPage({ showNotification }) {
     setLoading(true);
 
     try {
-      const response = await apiRequest('/products');
-      setProducts(Array.isArray(response.data) ? response.data : []);
+      const [response, stockRes] = await Promise.all([
+        apiRequest('/products'),
+        apiRequest('/inventory/stock').catch(() => null),
+      ]);
+      const ledgerMap = new Map();
+      if (Array.isArray(stockRes?.data)) {
+        stockRes.data.forEach((row) => {
+          ledgerMap.set(row.sku, Number(row.current_stock ?? 0));
+        });
+      }
+      const list = (Array.isArray(response.data) ? response.data : []).map((p) => ({
+        ...p,
+        current_stock: ledgerMap.has(p.sku)
+          ? ledgerMap.get(p.sku)
+          : Number(p.current_stock ?? 0),
+      }));
+      setProducts(list);
     } catch (error) {
       console.error('Gagal mengambil katalog POS:', error);
       showNotification?.(error.message, 'error');
@@ -94,11 +109,13 @@ const handleScanRFID = async () => {
   }
 
   const alreadyScanned = cart.some(item =>
-    item.epcs?.includes(epc) || item.epc === epc
+    item.epcs?.includes(epc) ||
+    item.box_epcs?.includes(epc) ||
+    item.epc === epc
   );
 
   if (alreadyScanned) {
-    showNotification?.('RFID ini sudah masuk ke keranjang.', 'error');
+    showNotification?.('RFID / Box ini sudah masuk ke keranjang.', 'error');
     setEpcInput('');
     return;
   }
@@ -112,6 +129,7 @@ const handleScanRFID = async () => {
     });
 
     const scanned = response.data;
+    const addQty = scanned.is_box ? Number(scanned.qty_per_box || 1) : 1;
 
     const catalogProduct = products.find(
       product => product.id === scanned.product_id
@@ -127,9 +145,11 @@ const handleScanRFID = async () => {
           item.product_id === scanned.product_id
             ? {
                 ...item,
-                quantity: item.quantity + 1,
+                quantity: item.quantity + addQty,
                 epc: scanned.epc,
-                epcs: [...(item.epcs || []), scanned.epc],
+                epcs: scanned.is_box ? (item.epcs || []) : [...(item.epcs || []), scanned.epc],
+                box_epcs: scanned.is_box ? [...(item.box_epcs || []), scanned.epc] : (item.box_epcs || []),
+                box_units: (item.box_units || 0) + (scanned.is_box ? addQty : 0),
               }
             : item
         );
@@ -143,17 +163,21 @@ const handleScanRFID = async () => {
           name: scanned.name,
           category: scanned.category,
           price: Number(scanned.price),
-          quantity: 1,
+          quantity: addQty,
           stock: Number(catalogProduct?.current_stock || 0),
           epc: scanned.epc,
-          epcs: [scanned.epc],
+          epcs: scanned.is_box ? [] : [scanned.epc],
+          box_epcs: scanned.is_box ? [scanned.epc] : [],
+          box_units: scanned.is_box ? addQty : 0,
         },
       ];
     });
 
     setEpcInput('');
     showNotification?.(
-      `${scanned.name} berhasil ditambahkan ke keranjang.`,
+      scanned.is_box
+        ? `${scanned.name} (${scanned.box_code} · ${addQty} unit) berhasil ditambahkan ke keranjang.`
+        : `${scanned.name} berhasil ditambahkan ke keranjang.`,
       'success'
     );
 
@@ -177,11 +201,14 @@ const handleCheckout = async () => {
     return;
   }
 
-  const epcs = cart.flatMap(item => item.epcs || []);
+  const scannedUnitsCount = cart.reduce(
+    (sum, item) => sum + (item.epcs?.length || 0) + (item.box_units || 0),
+    0
+  );
 
-  if (epcs.length !== totalItems || epcs.some(epc => !epc)) {
+  if (scannedUnitsCount !== totalItems) {
     showNotification?.(
-      'Pastikan setiap barang sudah memiliki RFID yang valid.',
+      'Pastikan setiap barang sudah memiliki RFID atau Box yang valid.',
       'error'
     );
     return;
@@ -197,6 +224,7 @@ const handleCheckout = async () => {
         payment: paymentMethod,
         items: cart.map(item => ({
           epcs: item.epcs || [],
+          box_epcs: item.box_epcs || [],
         })),
       }),
     });

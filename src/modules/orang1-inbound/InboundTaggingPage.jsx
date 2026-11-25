@@ -107,19 +107,28 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
   useEffect(() => {
     if (activeMenu !== 'stok') return;
     let current = true;
-    setStock({ ledger: null, racks: null });
+    setStock({ ledger: null, racks: null, rackLocations: null });
     Promise.allSettled([inboundRequest('/inventory/stock'), inboundRequest('/inventory/stock-by-rack')]).then(([ledger, racks]) => {
       if (!current) return;
       const available = new Map();
+      const rackLocations = new Map();
       if (racks.status === 'fulfilled' && Array.isArray(racks.value)) {
         for (const row of racks.value) {
           const key = String(row.product_id);
           available.set(key, (available.get(key) ?? 0) + Number(row.quantity));
+          if (row.rack_code) {
+            const set = rackLocations.get(key) ?? new Set();
+            set.add(row.rack_code);
+            rackLocations.set(key, set);
+          }
         }
       }
       setStock({
         ledger: ledger.status === 'fulfilled' && Array.isArray(ledger.value) ? new Map(ledger.value.map(row => [row.sku, row.current_stock])) : null,
         racks: racks.status === 'fulfilled' && Array.isArray(racks.value) ? available : null,
+        rackLocations: racks.status === 'fulfilled' && Array.isArray(racks.value)
+          ? new Map([...rackLocations.entries()].map(([k, set]) => [k, [...set].sort().join(', ')]))
+          : null,
       });
     });
     return () => { current = false; };
@@ -238,7 +247,15 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
         { accessorKey: 'sku', header: 'SKU / Kode', cell: ({ row }) => <span className="font-mono font-semibold text-foreground">{row.original.sku}</span> },
         { accessorKey: 'name', header: 'Nama Barang', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.name}</span> },
         { accessorKey: 'category', header: 'Kategori' },
-        { accessorKey: 'default_location_code', header: 'Lokasi Default', cell: ({ row }) => display(row.original.default_location_code) },
+        {
+          id: 'location_rack',
+          header: 'Lokasi / Rak',
+          accessorFn: row => row.default_location_code || stock.rackLocations?.get(String(row.id)) || '',
+          cell: ({ row }) => {
+            const actual = stock.rackLocations?.get(String(row.original.id));
+            return display(row.original.default_location_code || actual);
+          },
+        },
         { id: 'ledger_stock', header: 'Saldo Ledger', accessorFn: row => Number(stock.ledger?.get(row.sku) ?? 0), cell: ({ row }) => <span className="font-semibold">{display(stock.ledger?.get(row.original.sku))}</span> },
         { id: 'rack_stock', header: 'Tersedia di Rak', accessorFn: row => Number(stock.racks?.get(String(row.id)) ?? 0), cell: ({ row }) => display(stock.racks && (stock.racks.get(String(row.original.id)) ?? 0)) },
         { id: 'min_stock', header: 'Minimum Stok', accessorFn: row => Number(row.min_stock_alert ?? row.min_stock_threshold ?? 0), cell: ({ row }) => display(row.original.min_stock_alert ?? row.original.min_stock_threshold) },
