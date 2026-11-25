@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { Download, FileText, Plus, Printer, Send } from 'lucide-react';
 import { API_BASE_URL } from '../../config/api';
+import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 export default function InventoryLedgerPage({
   activeMenu = 'penyimpanan',
@@ -81,6 +85,7 @@ export default function InventoryLedgerPage({
             resi: row.invoice_or_resi,
             dest: row.customer_or_destination || '-',
             courier: row.courier || '-',
+            createdAt: row.created_at || null,
             date: row.created_at
               ? new Date(row.created_at).toLocaleString('id-ID')
               : '-',
@@ -1226,100 +1231,105 @@ export default function InventoryLedgerPage({
   // MENU 3: PENGIRIMAN (SHIPPING / OUTBOUND)
   // ============================================================================
   if (activeMenu === 'pengiriman') {
-    const filteredShip = shippingList.filter(
-      (s) =>
-        s.resi.toLowerCase().includes(combinedSearch) ||
-        s.dest.toLowerCase().includes(combinedSearch) ||
-        s.courier.toLowerCase().includes(combinedSearch)
-    );
+    const shipStatuses = [...new Set(shippingList.map((s) => s.status).filter(Boolean))].sort();
+    const shipCouriers = [...new Set(shippingList.map((s) => s.courier).filter((c) => c && c !== '-'))].sort();
+
+    const shipColumns = [
+      {
+        accessorKey: 'resi',
+        header: 'No. Resi / Ref',
+        cell: ({ row }) => <span className="font-mono font-semibold">{row.original.resi}</span>,
+      },
+      {
+        accessorKey: 'dest',
+        header: 'Tujuan / Pelanggan',
+        cell: ({ row }) => <span className="font-medium">{row.original.dest}</span>,
+      },
+      { accessorKey: 'courier', header: 'Kurir' },
+      {
+        id: 'createdAt',
+        header: 'Tanggal Kirim',
+        accessorFn: (row) => (row.createdAt ? new Date(row.createdAt).getTime() : 0),
+        cell: ({ row }) => (
+          <span className="font-mono text-muted-foreground whitespace-nowrap">{row.original.date}</span>
+        ),
+      },
+      {
+        accessorKey: 'gatePass',
+        header: 'Gate Pass',
+        cell: ({ row }) =>
+          row.original.gatePass ? (
+            <Badge variant="success" className="font-mono">{row.original.gatePass}</Badge>
+          ) : (
+            <span className="text-muted-foreground">Belum tersedia</span>
+          ),
+      },
+      {
+        accessorKey: 'status',
+        header: 'Status',
+        cell: ({ row }) => {
+          const s = String(row.original.status).toUpperCase();
+          const done = s.includes('SHIPPED') || s.includes('KELUAR');
+          return <Badge variant={done ? 'success' : 'secondary'}>{row.original.status}</Badge>;
+        },
+      },
+      {
+        id: 'actions',
+        header: 'Aksi',
+        enableSorting: false,
+        enableHiding: false,
+        cell: ({ row }) => (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => handlePrintShipping(row.original)}
+            className="h-7 gap-1.5 px-2 text-xs"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            Cetak Surat Jalan
+          </Button>
+        ),
+      },
+    ];
 
     return (
       <div className="space-y-6">
         <div
           data-tour="inventory-header"
-          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
         >
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">
-              Manajemen Pengiriman & Gate Pass (Outbound)
-            </h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Daftar pengiriman barang keluar gudang, otorisasi gerbang keluar, dan pelacakan kurir.
-            </p>
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+              <Send className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight">Pengiriman</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Daftar pengiriman barang keluar gudang, otorisasi gerbang keluar, dan pelacakan kurir.
+              </p>
+            </div>
           </div>
-          <button
-            onClick={() => setShowShippingModal(true)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
-          >
-            <span>+</span>
-            <span>Buat Pengiriman Baru</span>
-          </button>
+          <Button type="button" size="sm" onClick={() => setShowShippingModal(true)}>
+            <Plus className="h-4 w-4" />
+            Buat Pengiriman Baru
+          </Button>
         </div>
 
-        <div
-          data-tour="inventory-main-section"
-          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
-        >
-          <div className="p-4 border-b border-slate-200">
-            <input
-              type="text"
-              value={localSearch}
-              onChange={(e) => setLocalSearch(e.target.value)}
-              placeholder="Cari resi, tujuan, atau kurir..."
-              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="p-4">No. Resi / Ref</th>
-                  <th className="p-4">Tujuan / Pelanggan</th>
-                  <th className="p-4">Kurir</th>
-                  <th className="p-4">Tanggal Kirim</th>
-                  <th className="p-4">Gate Pass</th>
-                  <th className="p-4">Status</th>
-                  <th className="p-4">Aksi</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredShip.map((s, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="p-4 font-mono font-bold text-blue-600">{s.resi}</td>
-                    <td className="p-4 font-medium">{s.dest}</td>
-                    <td className="p-4">{s.courier}</td>
-                    <td className="p-4 text-slate-500">{s.date}</td>
-                    <td className="p-4">
-                      <span className="bg-emerald-50 text-emerald-700 font-mono text-xs px-2.5 py-1 rounded-lg font-bold">
-                        {s.gatePass || 'Belum tersedia'}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <span
-                        className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
-                          String(s.status).toUpperCase().includes('SHIPPED') ||
-                          String(s.status).toUpperCase().includes('KELUAR')
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                            : 'bg-blue-50 text-blue-700'
-                        }`}
-                      >
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <button
-                        type="button"
-                        onClick={() => handlePrintShipping(s)}
-                        className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold whitespace-nowrap"
-                      >
-                        Cetak Surat Jalan
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <div data-tour="inventory-main-section">
+          <DataTable
+            data={shippingList}
+            columns={shipColumns}
+            externalSearch={searchQuery}
+            searchPlaceholder="Cari resi, tujuan, atau kurir..."
+            dateField="createdAt"
+            initialSorting={[{ id: 'createdAt', desc: true }]}
+            filters={[
+              { key: 'status', label: 'Status', options: shipStatuses.map((v) => ({ value: v, label: v })) },
+              { key: 'courier', label: 'Kurir', options: shipCouriers.map((v) => ({ value: v, label: v })) },
+            ]}
+            emptyMessage="Belum ada data pengiriman."
+          />
         </div>
 
         {showShippingModal && (
@@ -1560,135 +1570,151 @@ export default function InventoryLedgerPage({
   }
 
   // ============================================================================
-  // MENU 4: BUKU BESAR PERGERAKAN (LEDGER APPEND-ONLY)
+  // MENU 4: BUKU BESAR PERGERAKAN (LEDGER APPEND-ONLY) — TanStack DataTable
   // ============================================================================
-  const filteredLedger = ledger.filter((movement) => {
-    const searchable = [
-      movement.tx_code,
-      movement.sku,
-      movement.product_name,
-      movement.movement_type,
-      movement.reference_doc,
-      movement.from_location,
-      movement.to_location,
-      movement.operator_name,
-    ];
-    return searchable.some((value) =>
-      String(value ?? '').toLowerCase().includes(combinedSearch)
-    );
-  });
+  const movementTypes = [...new Set(ledger.map((m) => m.movement_type).filter(Boolean))].sort();
+
+  const ledgerColumns = [
+    {
+      accessorKey: 'tx_code',
+      header: 'Kode Transaksi',
+      cell: ({ row }) => (
+        <span className="font-mono font-semibold text-foreground">
+          {row.original.tx_code || row.original.id || '-'}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'created_at',
+      header: 'Waktu / Tanggal',
+      cell: ({ row }) => (
+        <span className="font-mono text-muted-foreground whitespace-nowrap">
+          {row.original.created_at
+            ? new Date(row.original.created_at).toLocaleString('id-ID')
+            : '-'}
+        </span>
+      ),
+    },
+    {
+      accessorKey: 'movement_type',
+      header: 'Jenis Mutasi',
+      cell: ({ row }) => (
+        <Badge variant="secondary" className="font-mono text-[11px]">
+          {row.original.movement_type || '-'}
+        </Badge>
+      ),
+    },
+    {
+      accessorKey: 'product_name',
+      header: 'Produk / SKU',
+      cell: ({ row }) => (
+        <div>
+          <div className="font-mono font-semibold">{row.original.sku || '-'}</div>
+          <div className="text-[11px] text-muted-foreground">
+            {row.original.product_name || '-'}
+          </div>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'from_location',
+      header: 'Lokasi Asal',
+      cell: ({ row }) => row.original.from_location || '-',
+    },
+    {
+      accessorKey: 'to_location',
+      header: 'Lokasi Tujuan',
+      cell: ({ row }) => row.original.to_location || '-',
+    },
+    {
+      id: 'qty_change',
+      header: 'Perubahan',
+      accessorFn: (row) => Number(row.qty_change ?? row.qty ?? 0),
+      cell: ({ row }) => {
+        const qtyChange = Number(row.original.qty_change ?? row.original.qty ?? 0);
+        return (
+          <span
+            className={`font-semibold ${
+              qtyChange >= 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : 'text-destructive'
+            }`}
+          >
+            {qtyChange > 0 ? '+' : ''}
+            {qtyChange}
+          </span>
+        );
+      },
+    },
+    {
+      accessorKey: 'running_balance',
+      header: 'Saldo Berjalan',
+      cell: ({ row }) => (
+        <span className="font-semibold">{row.original.running_balance ?? '-'}</span>
+      ),
+    },
+    {
+      id: 'operator',
+      header: 'Operator',
+      accessorFn: (row) =>
+        row.operator_name || row.performed_by_name || 'Tidak diketahui',
+    },
+    {
+      accessorKey: 'reference_doc',
+      header: 'Dokumen Ref',
+      cell: ({ row }) => (
+        <span className="font-mono text-muted-foreground">
+          {row.original.reference_doc || '-'}
+        </span>
+      ),
+    },
+  ];
 
   return (
     <div className="space-y-6">
       <div
         data-tour="inventory-header"
-        className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
       >
-        <div>
-          <div className="flex items-center space-x-2">
-            <h2 className="text-xl font-bold text-slate-900">
-              Buku Besar Pergerakan Stok (Stock Ledger)
-            </h2>
-            <span className="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-indigo-200">
-              Append-Only
-            </span>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+            <FileText className="h-4 w-4" />
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Seluruh mutasi tercatat permanen tanpa menimpa angka stok; menjamin setiap selisih dapat diaudit.
-          </p>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-bold tracking-tight">
+                Ledger Pergerakan Stok
+              </h2>
+              <Badge variant="outline">Append-Only</Badge>
+            </div>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Seluruh mutasi tercatat permanen tanpa menimpa angka stok; mendukung sorting & filter tanggal.
+            </p>
+          </div>
         </div>
-        <button
-          type="button"
-          onClick={handleExportLedger}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
-        >
-          <span>Export Data Ledger</span>
-        </button>
+        <Button type="button" size="sm" onClick={handleExportLedger}>
+          <Download className="h-4 w-4" />
+          Export Data Ledger
+        </Button>
       </div>
 
-      <div
-        data-tour="inventory-main-section"
-        className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
-      >
-        <div className="p-4 border-b border-slate-200 flex justify-between gap-3">
-          <input
-            type="text"
-            value={localSearch}
-            onChange={(e) => setLocalSearch(e.target.value)}
-            placeholder="Cari transaksi, produk, lokasi, operator, atau dokumen..."
-            className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-80 focus:outline-none"
-          />
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                <th className="p-4">Kode Transaksi</th>
-                <th className="p-4">Waktu</th>
-                <th className="p-4">Jenis Mutasi</th>
-                <th className="p-4">Produk</th>
-                <th className="p-4">Lokasi Asal</th>
-                <th className="p-4">Lokasi Tujuan</th>
-                <th className="p-4">Perubahan</th>
-                <th className="p-4">Saldo Berjalan</th>
-                <th className="p-4">Operator</th>
-                <th className="p-4">Dokumen Ref</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
-              {filteredLedger.map((movement) => {
-                const qtyChange = Number(movement.qty_change ?? movement.qty ?? 0);
-                return (
-                  <tr key={movement.id || movement.tx_code} className="hover:bg-slate-50">
-                    <td className="p-4 font-mono font-bold text-blue-600">
-                      {movement.tx_code || movement.id || '-'}
-                    </td>
-                    <td className="p-4 text-xs text-slate-500 whitespace-nowrap">
-                      {movement.created_at
-                        ? new Date(movement.created_at).toLocaleString('id-ID')
-                        : '-'}
-                    </td>
-                    <td className="p-4">
-                      <span className="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-lg font-bold">
-                        {movement.movement_type || '-'}
-                      </span>
-                    </td>
-                    <td className="p-4">
-                      <div className="font-mono font-semibold">{movement.sku || '-'}</div>
-                      <div className="text-xs text-slate-500">{movement.product_name || '-'}</div>
-                    </td>
-                    <td className="p-4 text-xs">{movement.from_location || '-'}</td>
-                    <td className="p-4 text-xs">{movement.to_location || '-'}</td>
-                    <td
-                      className={`p-4 font-bold ${
-                        qtyChange >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                      }`}
-                    >
-                      {qtyChange > 0 ? '+' : ''}
-                      {qtyChange}
-                    </td>
-                    <td className="p-4 font-semibold text-slate-800">
-                      {movement.running_balance ?? '-'}
-                    </td>
-                    <td className="p-4 text-xs">
-                      {movement.operator_name || movement.performed_by_name || 'Tidak diketahui'}
-                    </td>
-                    <td className="p-4 font-mono text-xs text-slate-600">
-                      {movement.reference_doc || '-'}
-                    </td>
-                  </tr>
-                );
-              })}
-              {filteredLedger.length === 0 && (
-                <tr>
-                  <td colSpan={10} className="p-8 text-center text-slate-500">
-                    Belum ada data mutasi stok.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+      <div data-tour="inventory-main-section">
+        <DataTable
+          data={ledger}
+          columns={ledgerColumns}
+          externalSearch={searchQuery}
+          searchPlaceholder="Cari transaksi, SKU, lokasi, operator..."
+          dateField="created_at"
+          initialSorting={[{ id: 'created_at', desc: true }]}
+          filters={[
+            {
+              key: 'movement_type',
+              label: 'Jenis Mutasi',
+              options: movementTypes.map((t) => ({ value: t, label: t })),
+            },
+          ]}
+          emptyMessage="Belum ada data mutasi stok."
+        />
       </div>
     </div>
   );

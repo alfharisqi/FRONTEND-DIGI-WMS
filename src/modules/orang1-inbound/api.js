@@ -26,6 +26,12 @@ export const productForm = (row = {}) => ({
 export function newEpc() {
   return Array.from(crypto.getRandomValues(new Uint8Array(12)), b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
 }
+export function newSku(category = '', name = '') {
+  const source = String(category || name || 'SKU').replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+  const prefix = (source.slice(0, 3) || 'SKU').padEnd(3, 'X');
+  const randomDigits = String(1000 + (crypto.getRandomValues(new Uint16Array(1))[0] % 9000));
+  return `SKU-${prefix}-${randomDigits}`;
+}
 // Keep identity opaque; resolve a select's value to the original API ID.
 export function selectedProductId(products, value) {
   const product = products.find(row => String(row.id) === String(value));

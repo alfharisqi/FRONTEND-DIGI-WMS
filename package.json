@@ -15,11 +15,18 @@
     "test:orang1": "node --test tests/orang1-api.test.mjs"
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "driver.js": "^1.14.0",
     "lucide-react": "^0.400.0",
     "mqtt": "^5.7.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^2.5.4",
+    "tailwindcss-animate": "^1.0.7"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

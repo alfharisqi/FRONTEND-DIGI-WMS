@@ -1,5 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { RotateCcw } from 'lucide-react';
 import { apiRequest } from '../../services/api';
+import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 export default function ReturnPage({ showNotification }) {
   const [sales, setSales] = useState([]);
@@ -110,62 +114,132 @@ const handleProcessReturn = async () => {
 };
 
   return (
-    <div className="p-6">
-      <h1 className="text-2xl font-bold">Retur POS</h1>
-      <p className="mt-1 text-gray-500">
-        Pengembalian barang berdasarkan invoice dan EPC RFID.
-      </p>
+    <div className="space-y-6">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+          <RotateCcw className="h-4 w-4" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Retur POS</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Pengembalian barang berdasarkan invoice dan EPC RFID.
+          </p>
+        </div>
+      </div>
 
-      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4">
-  <h2 className="text-lg font-semibold mb-4">
-    Riwayat Transaksi POS
-  </h2>
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">
+            Riwayat Transaksi POS
+          </h2>
+          <p className="text-xs text-muted-foreground">
+            Pilih invoice untuk memproses pengembalian barang (urutkan & filter berdasarkan tanggal).
+          </p>
+        </div>
 
-  {loading ? (
-    <p>Memuat transaksi...</p>
-  ) : sales.length === 0 ? (
-    <p className="text-gray-500">Belum ada transaksi POS.</p>
-  ) : (
-    <div className="space-y-3">
-      {sales.map((sale) => (
-  <button
-    key={sale.id}
-    type="button"
-    onClick={() => handleSelectInvoice(sale.invoice_no)}
-    className={`w-full text-left rounded-lg border p-4 transition ${
-      selectedInvoice === sale.invoice_no
-        ? 'border-blue-500 bg-blue-50'
-        : 'border-gray-200 hover:border-blue-300'
-    }`}
-  >
-    <p className="font-semibold text-gray-800">
-      Invoice: {sale.invoice_no}
-    </p>
-
-    <p className="text-sm text-gray-500">
-      Pelanggan: {sale.customer_name || '-'}
-    </p>
-
-    <p className="text-sm text-gray-500">
-      Jumlah barang: {sale.total_items}
-    </p>
-
-    <p className="text-sm text-gray-500">
-      Total: Rp {Number(sale.total_amount).toLocaleString('id-ID')}
-    </p>
-
-    <p className="text-sm text-gray-500">
-      Status pembayaran: {sale.payment_status}
-    </p>
-
-    <p className="text-sm text-gray-500">
-      Tanggal: {new Date(sale.created_at).toLocaleString('id-ID')}
-    </p>
-  </button>
-))}
-    </div>
-  )}
-</div>
+        {loading ? (
+          <div className="rounded-md border bg-card p-8 text-center text-sm text-muted-foreground">
+            Memuat transaksi...
+          </div>
+        ) : (
+          <DataTable
+            data={sales}
+            columns={[
+              {
+                accessorKey: 'invoice_no',
+                header: 'Invoice',
+                cell: ({ row }) => (
+                  <span className="font-mono font-semibold">
+                    {row.original.invoice_no}
+                  </span>
+                ),
+              },
+              {
+                id: 'customer_name',
+                header: 'Pelanggan',
+                accessorFn: (row) => row.customer_name || 'Pelanggan Umum',
+              },
+              {
+                accessorKey: 'total_items',
+                header: 'Jumlah',
+                cell: ({ row }) => `${row.original.total_items} unit`,
+              },
+              {
+                id: 'total_amount',
+                header: 'Total',
+                accessorFn: (row) => Number(row.total_amount || 0),
+                cell: ({ row }) => (
+                  <span className="font-semibold">
+                    Rp {Number(row.original.total_amount).toLocaleString('id-ID')}
+                  </span>
+                ),
+              },
+              {
+                accessorKey: 'payment_status',
+                header: 'Status',
+                cell: ({ row }) => (
+                  <Badge
+                    variant={
+                      row.original.payment_status === 'PAID'
+                        ? 'success'
+                        : 'warning'
+                    }
+                  >
+                    {row.original.payment_status}
+                  </Badge>
+                ),
+              },
+              {
+                id: 'created_at',
+                header: 'Tanggal',
+                accessorFn: (row) =>
+                  row.created_at ? new Date(row.created_at).getTime() : 0,
+                cell: ({ row }) => (
+                  <span className="font-mono text-muted-foreground whitespace-nowrap">
+                    {row.original.created_at
+                      ? new Date(row.original.created_at).toLocaleString('id-ID')
+                      : '-'}
+                  </span>
+                ),
+              },
+              {
+                id: 'actions',
+                header: 'Aksi',
+                enableSorting: false,
+                enableHiding: false,
+                cell: ({ row }) => {
+                  const inv = row.original.invoice_no;
+                  const active = selectedInvoice === inv;
+                  return (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={active ? 'default' : 'outline'}
+                      className="h-7 px-2.5 text-xs"
+                      onClick={() => handleSelectInvoice(inv)}
+                    >
+                      {active ? 'Dipilih' : 'Pilih'}
+                    </Button>
+                  );
+                },
+              },
+            ]}
+            searchPlaceholder="Cari invoice atau pelanggan..."
+            dateField="created_at"
+            initialSorting={[{ id: 'created_at', desc: true }]}
+            filters={[
+              {
+                key: 'payment_status',
+                label: 'Status',
+                options: [
+                  ...new Set(sales.map((s) => s.payment_status).filter(Boolean)),
+                ].map((v) => ({ value: v, label: v })),
+              },
+            ]}
+            emptyMessage="Belum ada transaksi POS."
+          />
+        )}
+      </div>
 
 {selectedInvoice && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
