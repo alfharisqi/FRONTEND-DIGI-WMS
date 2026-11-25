@@ -704,65 +704,6 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
               Setujui Penyesuaian ke Ledger
             </Button>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] table-fixed text-left border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="w-[30%] p-3">SKU / Nama Barang</th>
-                  <th className="w-[12%] p-3">Lokasi Sistem</th>
-                  <th className="w-[9%] p-3">Stok Sistem</th>
-                  <th className="w-[10%] p-3">Hasil Scan RFID</th>
-                  <th className="w-[7%] p-3">Selisih</th>
-                  <th className="w-[20%] p-3">Diagnosa Audit</th>
-                  <th className="w-[12%] p-3 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {discrepancyRows.map((row) => (
-                <tr key={row.epc ? `${row.sku}-${row.epc}` : row.sku} className="hover:bg-slate-50">
-                    <td className="p-4">
-                      <p className="font-bold text-slate-900">{row.name}</p>
-                      <span className="text-xs font-mono text-blue-600">{row.sku}</span>
-                    </td>
-                    <td className="p-3 break-words">{row.location}</td>
-                    <td className="p-3 font-bold">{row.systemStock} Unit</td>
-                    <td className="p-3 font-bold text-blue-600">{row.scannedStock} Unit</td>
-                    <td
-                      className={`p-3 font-extrabold ${
-                        row.status === 'MATCH' ? 'text-emerald-600' :
-                        row.status === 'MISPLACED' ? 'text-amber-600' :
-                        row.status === 'SURPLUS' ? 'text-blue-600' : 'text-rose-600'
-                      }`}
-                    >
-                      {row.diff > 0 ? `+${row.diff}` : row.diff}
-                    </td>
-                    <td className="p-3 text-xs font-medium break-words">{row.diagnosis}</td>
-                    <td className="p-3 text-center">
-                      <span
-                        className={`inline-flex max-w-full whitespace-nowrap text-xs px-2 py-1 rounded-lg font-semibold ${
-                          row.status === 'MISPLACED'
-                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                            : row.status === 'MATCH'
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : row.status === 'SURPLUS'
-                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
-                                : 'bg-rose-50 text-rose-700 border border-rose-200'
-                        }`}
-                      >
-                        {row.status === 'MISPLACED'
-                          ? 'Misplaced'
-                          : row.status === 'MATCH'
-                            ? 'Match'
-                            : row.status === 'SURPLUS'
-                              ? 'Surplus'
-                              : 'Missing'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
           <div className="p-4">
             <DataTable
               data={discrepancyRows}
