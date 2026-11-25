@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { apiRequest } from '../../services/api';
 import { createEmqxWebSocketClient } from '../../services/mqttClient';
 import JsBarcode from 'jsbarcode';
 import { RefreshCw, ShoppingCart } from 'lucide-react';
