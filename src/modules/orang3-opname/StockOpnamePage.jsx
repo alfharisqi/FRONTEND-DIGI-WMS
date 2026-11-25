@@ -801,7 +801,6 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
           </div>
         </div>
       </div>
-      </div>
     );
   }
 
