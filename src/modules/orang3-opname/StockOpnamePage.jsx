@@ -1,5 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { CheckCircle2, Radio, Siren } from 'lucide-react';
 import { API_BASE_URL, apiRequest } from '../../services/api';
+import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 export default function StockOpnamePage({
   activeMenu = 'rfid-opname',
@@ -30,6 +34,7 @@ export default function StockOpnamePage({
       if (events.length > 0) {
         setGateIncidents(
           events.map((evt) => ({
+            eventTime: evt.event_time || null,
             time: evt.event_time
               ? new Date(evt.event_time).toLocaleString('id-ID')
               : '-',
@@ -415,11 +420,13 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
 };
 
   const testGateSimulation = async (mode) => {
+    const nowIso = new Date().toISOString();
     const nowStr = new Date().toLocaleTimeString('id-ID');
     if (mode === 'authorized') {
       setGateStatus('AMAN');
       setGateIncidents((prev) => [
         {
+          eventTime: nowIso,
           time: `Hari ini ${nowStr}`,
           epc: 'E280-1160-2000-042E',
           name: 'Gaming Headset 7.1 (Gate Pass Valid)',
@@ -437,6 +444,7 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
       const illegalEpc = 'E280-6894-0000-991A';
       setGateIncidents((prev) => [
         {
+          eventTime: nowIso,
           time: `Hari ini ${nowStr}`,
           epc: illegalEpc,
           name: 'Mouse Wireless Logi (TANPA SURAT JALAN)',
@@ -469,6 +477,7 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
       setGateStatus('CROSSREAD');
       setGateIncidents((prev) => [
         {
+          eventTime: nowIso,
           time: `Hari ini ${nowStr}`,
           epc: 'E280-1160-2000-012A',
           name: 'Barang di Rak Dekat Pintu (Sinyal Lemah)',
@@ -496,18 +505,20 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
           data-tour="opname-gate-header"
           className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
         >
-          <div>
-            <div className="flex items-center space-x-2">
-              <h2 className="text-xl font-bold text-slate-900">
-                Simulasi Stock Opname Handheld RFID
-              </h2>
-              <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-emerald-200">
-                Cycle Count
-              </span>
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+              <Radio className="h-4 w-4" />
             </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Mode demo memakai EPC contoh dan progres animasi. Untuk audit fisik, scan tag dari aplikasi handheld.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-2xl font-bold tracking-tight">
+                  Opname Handheld RFID
+                </h2>
+              </div>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Mode demo memakai EPC contoh dan progres animasi. Untuk audit fisik, scan tag dari aplikasi handheld.
+              </p>
+            </div>
           </div>
           <div className="flex items-center space-x-3">
             <select
@@ -683,14 +694,15 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
                 Perbandingan data sistem terhadap hasil pemindaian handheld terakhir.
               </p>
             </div>
-            <button
+            <Button
+              type="button"
+              size="sm"
               onClick={handleApproveAdjustment}
               disabled={!selectedApprovalSession || selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL'}
-              className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md transition-all flex items-center space-x-2"
             >
-              <span>✅</span>
-              <span>Setujui Penyesuaian ke Ledger</span>
-            </button>
+              <CheckCircle2 className="h-4 w-4" />
+              Setujui Penyesuaian ke Ledger
+            </Button>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1040px] table-fixed text-left border-collapse text-sm">
@@ -750,6 +762,101 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
                 ))}
               </tbody>
             </table>
+
+          <div className="p-4">
+            <DataTable
+              data={discrepancyRows}
+              columns={[
+                {
+                  accessorKey: 'name',
+                  header: 'SKU / Nama Barang',
+                  cell: ({ row }) => (
+                    <div>
+                      <p className="font-medium text-foreground">{row.original.name}</p>
+                      <span className="text-[11px] font-mono text-muted-foreground">{row.original.sku}</span>
+                    </div>
+                  ),
+                },
+                { accessorKey: 'location', header: 'Lokasi Sistem' },
+                {
+                  accessorKey: 'systemStock',
+                  header: 'Stok Sistem',
+                  cell: ({ row }) => <span className="font-semibold">{row.original.systemStock} Unit</span>,
+                },
+                {
+                  accessorKey: 'scannedStock',
+                  header: 'Hasil Scan RFID',
+                  cell: ({ row }) => <span className="font-semibold">{row.original.scannedStock} Unit</span>,
+                },
+                {
+                  accessorKey: 'diff',
+                  header: 'Selisih',
+                  cell: ({ row }) => (
+                    <span
+                      className={`font-bold ${
+                        row.original.diff === 0
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-destructive'
+                      }`}
+                    >
+                      {row.original.diff > 0 ? `+${row.original.diff}` : row.original.diff}
+                    </span>
+                  ),
+                },
+                { accessorKey: 'diagnosis', header: 'Diagnosa Audit' },
+                {
+                  id: 'auditStatus',
+                  header: 'Status',
+                  accessorFn: (row) =>
+                    row.type === 'MISPLACED'
+                      ? 'SALAH_ZONA'
+                      : row.diff === 0
+                      ? 'MATCHED'
+                      : 'REKONSILIASI',
+                  cell: ({ row }) => {
+                    const r = row.original;
+                    return (
+                      <Badge
+                        variant={
+                          r.type === 'MISPLACED'
+                            ? 'warning'
+                            : r.diff === 0
+                            ? 'success'
+                            : 'destructive'
+                        }
+                      >
+                        {r.type === 'MISPLACED'
+                          ? 'Salah Zona'
+                          : r.diff === 0
+                          ? 'Matched'
+                          : 'Perlu Rekonsiliasi'}
+                      </Badge>
+                    );
+                  },
+                },
+              ]}
+              searchPlaceholder="Cari SKU, barang, atau lokasi..."
+              initialSorting={[{ id: 'diff', desc: false }]}
+              filters={[
+                {
+                  key: 'auditStatus',
+                  label: 'Status',
+                  getValue: (r) =>
+                    r.type === 'MISPLACED'
+                      ? 'SALAH_ZONA'
+                      : r.diff === 0
+                      ? 'MATCHED'
+                      : 'REKONSILIASI',
+                  options: [
+                    { value: 'MATCHED', label: 'Matched' },
+                    { value: 'REKONSILIASI', label: 'Perlu Rekonsiliasi' },
+                    { value: 'SALAH_ZONA', label: 'Salah Zona' },
+                  ],
+                },
+              ]}
+              emptyMessage="Belum ada data perbandingan opname."
+            />
+
           </div>
         </div>
       </div>
@@ -765,18 +872,18 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
         data-tour="opname-gate-header"
         className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
       >
-        <div>
-          <div className="flex items-center space-x-2">
-            <h2 className="text-xl font-bold text-slate-900">
-              Monitoring Gerbang RFID & Alarm Fisik
-            </h2>
-            <span className="bg-rose-50 text-rose-700 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-rose-200">
-              Loss Prevention
-            </span>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+            <Siren className="h-4 w-4" />
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Sistem pencegah kehilangan berbasis pembacaan tag pada pintu gerbang gudang (Fixed Reader + Relay GPIO).
-          </p>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">
+              Gate & Alarm Live
+            </h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Sistem pencegah kehilangan berbasis pembacaan tag pada pintu gerbang gudang (Fixed Reader + Relay GPIO).
+            </p>
+          </div>
         </div>
         <div className="flex items-center space-x-2">
           {gateStatus === 'ALARM' && (
@@ -891,61 +998,87 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
         </div>
       </div>
 
-      {/* Incident & Gate Events Log Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 flex justify-between items-center">
+      {/* Incident & Gate Events Log Table (TanStack DataTable) */}
+      <div className="space-y-3">
+        <div className="flex flex-wrap justify-between items-center gap-2">
           <div>
-            <h3 className="font-bold text-slate-900 text-base">
+            <h3 className="font-semibold text-base tracking-tight">
               Log Kejadian Gerbang & Alarm (Incident Log)
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Riwayat waktu nyata pembacaan antena gerbang dan pemicuan relay.
             </p>
           </div>
-          <span className="text-xs bg-slate-100 text-slate-600 px-3 py-1 rounded-lg font-medium">
-            Otomatis terhubung ke EMQX & CCTV
-          </span>
+          <Badge variant="outline">Otomatis terhubung ke EMQX & CCTV</Badge>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
-            <thead>
-              <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                <th className="p-4">Waktu Event</th>
-                <th className="p-4">EPC Tag</th>
-                <th className="p-4">Barang / Deskripsi</th>
-                <th className="p-4">Antena Gerbang</th>
-                <th className="p-4">Sinyal (RSSI)</th>
-                <th className="p-4">Status Otorisasi</th>
-                <th className="p-4 text-right">Tindakan Keamanan</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-slate-700">
-              {gateIncidents.map((inc, idx) => (
-                <tr key={idx} className="hover:bg-slate-50">
-                  <td className="p-4 text-xs text-slate-500">{inc.time}</td>
-                  <td className="p-4 font-mono font-bold text-slate-800">{inc.epc}</td>
-                  <td className="p-4 font-medium">{inc.name}</td>
-                  <td className="p-4 text-xs">{inc.antenna}</td>
-                  <td className="p-4 font-mono text-xs">{inc.rssi}</td>
-                  <td className="p-4">
-                    <span
-                      className={`text-xs px-2.5 py-1 rounded-lg font-bold ${
-                        inc.status.includes('ILLEGAL')
-                          ? 'bg-rose-100 text-rose-700'
-                          : inc.status.includes('Authorized')
-                          ? 'bg-emerald-50 text-emerald-700'
-                          : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {inc.status}
-                    </span>
-                  </td>
-                  <td className="p-4 text-right font-semibold text-xs">{inc.action}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+
+        <DataTable
+          data={gateIncidents}
+          columns={[
+            {
+              id: 'eventTime',
+              header: 'Waktu Event',
+              accessorFn: (row) => (row.eventTime ? new Date(row.eventTime).getTime() : 0),
+              cell: ({ row }) => (
+                <span className="font-mono text-muted-foreground whitespace-nowrap">
+                  {row.original.time}
+                </span>
+              ),
+            },
+            {
+              accessorKey: 'epc',
+              header: 'EPC Tag',
+              cell: ({ row }) => <span className="font-mono font-semibold">{row.original.epc}</span>,
+            },
+            {
+              accessorKey: 'name',
+              header: 'Barang / Deskripsi',
+              cell: ({ row }) => <span className="font-medium">{row.original.name}</span>,
+            },
+            { accessorKey: 'antenna', header: 'Antena Gerbang' },
+            {
+              accessorKey: 'rssi',
+              header: 'Sinyal (RSSI)',
+              cell: ({ row }) => <span className="font-mono">{row.original.rssi}</span>,
+            },
+            {
+              accessorKey: 'status',
+              header: 'Status Otorisasi',
+              cell: ({ row }) => {
+                const st = String(row.original.status || '');
+                return (
+                  <Badge
+                    variant={
+                      st.includes('ILLEGAL')
+                        ? 'destructive'
+                        : st.includes('Authorized')
+                        ? 'success'
+                        : 'secondary'
+                    }
+                  >
+                    {st}
+                  </Badge>
+                );
+              },
+            },
+            {
+              accessorKey: 'action',
+              header: 'Tindakan Keamanan',
+              cell: ({ row }) => <span className="font-medium">{row.original.action}</span>,
+            },
+          ]}
+          searchPlaceholder="Cari EPC, barang, antena..."
+          dateField="eventTime"
+          initialSorting={[{ id: 'eventTime', desc: true }]}
+          filters={[
+            {
+              key: 'status',
+              label: 'Status',
+              options: [...new Set(gateIncidents.map((i) => i.status).filter(Boolean))].map((v) => ({ value: v, label: v })),
+            },
+          ]}
+          emptyMessage="Belum ada log kejadian gerbang."
+        />
       </div>
     </div>
   );

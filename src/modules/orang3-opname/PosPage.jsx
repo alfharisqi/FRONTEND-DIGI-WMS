@@ -2,6 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../../services/api';
 import { createEmqxWebSocketClient } from '../../services/mqttClient';
 import JsBarcode from 'jsbarcode';
+import React, { useEffect, useMemo, useState } from 'react';
+import { RefreshCw, ShoppingCart } from 'lucide-react';
+import { apiRequest } from '../../services/api';
+import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 export default function PosPage({ showNotification }) {
   const [products, setProducts] = useState([]);
@@ -742,19 +748,18 @@ const handleCheckout = async () => {
     <div className="space-y-5 pb-6">
 
       {/* HEADER POS */}
-      <div>
-        <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-bold text-slate-900">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+          <ShoppingCart className="h-4 w-4" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">
             Kasir POS
           </h1>
-          <span className="bg-blue-100 text-blue-700 text-xs font-bold px-3 py-1 rounded-full">
-            Point of Sale
-          </span>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Kelola transaksi penjualan dan pemindaian RFID DIGI WMS
+          </p>
         </div>
-
-        <p className="text-sm text-slate-500 mt-1">
-          Kelola transaksi penjualan dan pemindaian RFID DIGI WMS
-        </p>
       </div>
 
       {/* NAVIGASI TAB POS */}
@@ -1259,6 +1264,7 @@ const handleCheckout = async () => {
         )}
       {activePosTab === 'riwayat' && (
   <>
+
     {/* RIWAYAT TRANSAKSI POS */}
     <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
 
@@ -1365,6 +1371,88 @@ const handleCheckout = async () => {
     </table>
   </div>
 </section>
+
+    {/* RIWAYAT TRANSAKSI POS (TanStack DataTable) */}
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold tracking-tight">Riwayat Transaksi</h2>
+        <p className="text-sm text-muted-foreground">
+          Daftar transaksi penjualan POS terbaru — urutkan & filter berdasarkan tanggal.
+        </p>
+      </div>
+      {salesLoading ? (
+        <div className="rounded-md border bg-card p-10 text-center text-sm text-muted-foreground">
+          Memuat riwayat transaksi...
+        </div>
+      ) : (
+        <DataTable
+          data={sales}
+          columns={[
+            {
+              accessorKey: 'invoice_no',
+              header: 'Invoice',
+              cell: ({ row }) => <span className="font-mono font-semibold">{row.original.invoice_no}</span>,
+            },
+            {
+              id: 'customer',
+              header: 'Pelanggan',
+              accessorFn: (row) => row.customer_name || 'Pelanggan Umum',
+            },
+            {
+              id: 'total_items',
+              header: 'Jumlah Item',
+              accessorFn: (row) => Number(row.total_items || 0),
+            },
+            {
+              id: 'total_amount',
+              header: 'Total',
+              accessorFn: (row) => Number(row.total_amount || 0),
+              cell: ({ row }) => (
+                <span className="font-semibold">{formatRupiah(Number(row.original.total_amount))}</span>
+              ),
+            },
+            {
+              accessorKey: 'payment_status',
+              header: 'Pembayaran',
+              cell: ({ row }) => (
+                <Badge variant={row.original.payment_status === 'PAID' ? 'success' : 'warning'}>
+                  {row.original.payment_status}
+                </Badge>
+              ),
+            },
+            {
+              accessorKey: 'created_at',
+              header: 'Waktu',
+              cell: ({ row }) => (
+                <span className="font-mono text-muted-foreground whitespace-nowrap">
+                  {row.original.created_at
+                    ? new Date(row.original.created_at).toLocaleString('id-ID')
+                    : '-'}
+                </span>
+              ),
+            },
+          ]}
+          searchPlaceholder="Cari invoice atau pelanggan..."
+          dateField="created_at"
+          initialSorting={[{ id: 'created_at', desc: true }]}
+          filters={[
+            {
+              key: 'payment_status',
+              label: 'Pembayaran',
+              options: [...new Set(sales.map((s) => s.payment_status).filter(Boolean))].map((v) => ({ value: v, label: v })),
+            },
+          ]}
+          emptyMessage="Belum ada transaksi POS."
+          toolbarActions={
+            <Button type="button" variant="outline" size="sm" onClick={fetchSales} disabled={salesLoading} className="h-8 gap-1.5 text-xs">
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
+          }
+        />
+      )}
+    </section>
+
   </>
 )}
 
