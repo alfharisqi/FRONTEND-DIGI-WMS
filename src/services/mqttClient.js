@@ -22,7 +22,7 @@ export function createEmqxWebSocketClient(onMessageCallback, onStatusChange) {
 
     // Subscribe ke topik real-time DIGI WMS
     client.subscribe(
-      ['wms/stock/realtime', 'wms/tags/encoded', 'wms/opname/+/scan', 'wms/gate/+/alarm'],
+      ['wms/stock/realtime', 'wms/tags/encoded', 'wms/opname/+/scan', 'wms/gate/+/alarm', 'wms/pos/live-scan'],
       { qos: 1 }
     );
   });
