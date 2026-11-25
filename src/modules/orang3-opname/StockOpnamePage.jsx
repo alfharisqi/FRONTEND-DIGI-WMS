@@ -149,7 +149,8 @@ const buildDiscrepancyTable = (auditData) => {
     : diff < 0
     ? 'Selisih Kurang / Missing'
     : 'Surplus / Perlu Pemeriksaan',
-approved: diff === 0,
+      status: diff === 0 ? 'MATCH' : diff < 0 ? 'MISSING' : 'SURPLUS',
+      approved: diff === 0,
     };
   });
 
@@ -164,9 +165,10 @@ const misplacedRows = discrepancies
     location: `Aktual: Zona ${item.actual_zone || '-'}`,
     systemStock: 0,
     scannedStock: 1,
-    diff: 0,
+    diff: 1,
     diagnosis: `Salah Zona (MISPLACED) - Terbaca di Zona ${item.actual_zone || '-'}`,
     approved: false,
+    status: 'MISPLACED',
     type: 'MISPLACED',
     epc: item.epc,
   }));
@@ -272,6 +274,28 @@ const submitScanResults = async (epcs, activeSessionId = sessionId) => {
 
 const runHandheldOpnameSimulation = async () => {
   try {
+    const catalog = await apiRequest(
+      `/stocktake/zones/${encodeURIComponent(selectedZone)}/epcs`
+    );
+    const zoneEpcs = Array.isArray(catalog.data?.epcs) ? catalog.data.epcs : [];
+    const zoneProducts = Array.isArray(catalog.data?.products) ? catalog.data.products : [];
+    if (zoneEpcs.length === 0) {
+      throw new Error(`Tidak ada EPC aktif di zona ${selectedZone}.`);
+    }
+
+    // Read every EPC for one SKU to demonstrate Match, leave other SKUs
+    // unread to demonstrate Missing, and add one other-zone EPC for Misplaced.
+    const misplacedSample = catalog.data?.misplaced_sample;
+    const matchProduct = zoneProducts.find(
+      (product) => product.product_id !== misplacedSample?.product_id
+    ) || zoneProducts[0];
+    const matchEpcs = Array.isArray(matchProduct?.epcs) && matchProduct.epcs.length > 0
+      ? matchProduct.epcs
+      : zoneEpcs.slice(0, 1);
+    const simulatedEpcs = misplacedSample?.epc
+      ? [...matchEpcs, misplacedSample.epc]
+      : matchEpcs;
+
     // Membuat sesi Stock Opname di backend
     const session = await apiRequest('/stocktake/sessions', {
       method: 'POST',
@@ -286,11 +310,6 @@ const runHandheldOpnameSimulation = async () => {
     setSessionCode(session.data.session_code);
     const activeSessionId = session.data.id;
 
-const simulatedEpcs = [
-  'E280-1160-2000-012A', // Barang A1
-  'E280-1160-2000-018B', // Barang B1
-];
-
     // Menjalankan simulasi tampilan pemindaian
     setScanning(true);
     setScanProgress(0);
@@ -299,14 +318,11 @@ const simulatedEpcs = [
     let step = 0;
 
     const interval = setInterval(() => {
-      step += 25;
-      setScanProgress(step);
+      step += 1;
+      setScannedCount(step);
+      setScanProgress(Math.round((step / simulatedEpcs.length) * 100));
 
-      setScannedCount(
-        Math.ceil((step / 100) * simulatedEpcs.length)
-      );
-
-      if (step >= 100) {
+      if (step >= simulatedEpcs.length) {
         clearInterval(interval);
 
         
@@ -323,9 +339,12 @@ setTimeout(async () => {
    setAuditResult(result);
 
 buildDiscrepancyTable(result);
+    await fetchSessions();
 
     showNotification?.(
-      `Simulasi EPC Zona ${selectedZone} selesai direkonsiliasi backend.`,
+      misplacedSample?.epc
+        ? `Demo Zona ${selectedZone} selesai: EPC zona ${misplacedSample.zone_code} disimulasikan sebagai Salah Zona.`
+        : `Simulasi EPC Zona ${selectedZone} selesai direkonsiliasi backend.`,
       'success'
     );
   } catch (err) {
@@ -674,54 +693,58 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
             </button>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
+            <table className="w-full min-w-[1040px] table-fixed text-left border-collapse text-sm">
               <thead>
                 <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="p-4">SKU / Nama Barang</th>
-                  <th className="p-4">Lokasi Sistem</th>
-                  <th className="p-4">Stok Sistem</th>
-                  <th className="p-4">Hasil Scan RFID</th>
-                  <th className="p-4">Selisih</th>
-                  <th className="p-4">Diagnosa Audit</th>
-                  <th className="p-4 text-right">Status</th>
+                  <th className="w-[30%] p-3">SKU / Nama Barang</th>
+                  <th className="w-[12%] p-3">Lokasi Sistem</th>
+                  <th className="w-[9%] p-3">Stok Sistem</th>
+                  <th className="w-[10%] p-3">Hasil Scan RFID</th>
+                  <th className="w-[7%] p-3">Selisih</th>
+                  <th className="w-[20%] p-3">Diagnosa Audit</th>
+                  <th className="w-[12%] p-3 text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {discrepancyRows.map((row) => (
-                  <tr key={row.sku} className="hover:bg-slate-50">
+                <tr key={row.epc ? `${row.sku}-${row.epc}` : row.sku} className="hover:bg-slate-50">
                     <td className="p-4">
                       <p className="font-bold text-slate-900">{row.name}</p>
                       <span className="text-xs font-mono text-blue-600">{row.sku}</span>
                     </td>
-                    <td className="p-4">{row.location}</td>
-                    <td className="p-4 font-bold">{row.systemStock} Unit</td>
-                    <td className="p-4 font-bold text-blue-600">{row.scannedStock} Unit</td>
+                    <td className="p-3 break-words">{row.location}</td>
+                    <td className="p-3 font-bold">{row.systemStock} Unit</td>
+                    <td className="p-3 font-bold text-blue-600">{row.scannedStock} Unit</td>
                     <td
-                      className={`p-4 font-extrabold ${
-                        row.diff === 0 ? 'text-emerald-600' : 'text-rose-600'
+                      className={`p-3 font-extrabold ${
+                        row.status === 'MATCH' ? 'text-emerald-600' :
+                        row.status === 'MISPLACED' ? 'text-amber-600' :
+                        row.status === 'SURPLUS' ? 'text-blue-600' : 'text-rose-600'
                       }`}
                     >
                       {row.diff > 0 ? `+${row.diff}` : row.diff}
                     </td>
-                    <td className="p-4 text-xs font-medium">{row.diagnosis}</td>
-                    <td className="p-4 text-right">
-                      
-<span
-  className={`text-xs px-2.5 py-1 rounded-lg font-semibold ${
-    row.type === 'MISPLACED'
-      ? 'bg-amber-50 text-amber-700 border border-amber-200'
-      : row.diff === 0
-      ? 'bg-emerald-50 text-emerald-700'
-      : 'bg-rose-50 text-rose-700 border border-rose-200'
-  }`}
->
-  {row.type === 'MISPLACED'
-    ? 'Salah Zona'
-    : row.diff === 0
-    ? 'Matched'
-    : 'Perlu Rekonsiliasi'}
-</span>
-
+                    <td className="p-3 text-xs font-medium break-words">{row.diagnosis}</td>
+                    <td className="p-3 text-center">
+                      <span
+                        className={`inline-flex max-w-full whitespace-nowrap text-xs px-2 py-1 rounded-lg font-semibold ${
+                          row.status === 'MISPLACED'
+                            ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                            : row.status === 'MATCH'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                              : row.status === 'SURPLUS'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'bg-rose-50 text-rose-700 border border-rose-200'
+                        }`}
+                      >
+                        {row.status === 'MISPLACED'
+                          ? 'Misplaced'
+                          : row.status === 'MATCH'
+                            ? 'Match'
+                            : row.status === 'SURPLUS'
+                              ? 'Surplus'
+                              : 'Missing'}
+                      </span>
                     </td>
                   </tr>
                 ))}

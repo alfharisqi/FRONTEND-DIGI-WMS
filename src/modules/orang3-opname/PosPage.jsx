@@ -1,13 +1,25 @@
-
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { apiRequest } from '../../services/api';
+import { createEmqxWebSocketClient } from '../../services/mqttClient';
+import JsBarcode from 'jsbarcode';
 
 export default function PosPage({ showNotification }) {
   const [products, setProducts] = useState([]);
-  const [cart, setCart] = useState([]);
+  // Pulihkan draft keranjang saat halaman POS dibuka kembali dalam tab yang sama.
+  const [cart, setCart] = useState(() => {
+    try {
+      const savedCart = sessionStorage.getItem('digiwms_pos_cart');
+      const parsedCart = savedCart ? JSON.parse(savedCart) : [];
+      return Array.isArray(parsedCart) ? parsedCart : [];
+    } catch (error) {
+      console.warn('Draft keranjang POS tidak dapat dipulihkan:', error);
+      return [];
+    }
+  });
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('Semua');
   const [loading, setLoading] = useState(true);
+  const [rackStockLoaded, setRackStockLoaded] = useState(false);
   const [sales, setSales] = useState([]);
   const [salesLoading, setSalesLoading] = useState(false);
   const [activePosTab, setActivePosTab] = useState('kasir');
@@ -15,14 +27,66 @@ export default function PosPage({ showNotification }) {
   const [scanLoading, setScanLoading] = useState(false);
   const [customerName, setCustomerName] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [cashReceived, setCashReceived] = useState('');
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [checkoutGatePass, setCheckoutGatePass] = useState(null);
+  const [cartModalOpen, setCartModalOpen] = useState(false);
+    // Detail invoice POS
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [invoiceDetail, setInvoiceDetail] = useState(null);
+  const [invoiceDetailLoading, setInvoiceDetailLoading] = useState(false);
+  const handleScanRFIDRef = useRef(null);
 
   const fetchProducts = async () => {
     setLoading(true);
 
     try {
-      const response = await apiRequest('/products');
-      setProducts(Array.isArray(response.data) ? response.data : []);
+      const [productsResult, rackStockResult] = await Promise.allSettled([
+        apiRequest('/products'),
+        apiRequest('/inventory/stock-by-rack'),
+      ]);
+
+      if (productsResult.status === 'rejected') throw productsResult.reason;
+
+      const catalog = Array.isArray(productsResult.value.data)
+        ? productsResult.value.data
+        : [];
+
+      if (rackStockResult.status === 'fulfilled') {
+        const rackRows = Array.isArray(rackStockResult.value.data)
+          ? rackStockResult.value.data
+          : [];
+        const stockBySku = rackRows.reduce((totals, row) => {
+          const sku = String(row.sku || '');
+          if (!sku) return totals;
+          const available = Number(row.available_quantity ?? row.quantity ?? 0);
+          const quantity = Number(row.quantity ?? available);
+          const reserved = Number(row.reserved_quantity || 0);
+          totals[sku] ||= { available: 0, quantity: 0, reserved: 0 };
+          totals[sku].available += Number.isFinite(available) ? available : 0;
+          totals[sku].quantity += Number.isFinite(quantity) ? quantity : 0;
+          totals[sku].reserved += Number.isFinite(reserved) ? reserved : 0;
+          return totals;
+        }, {});
+
+        setProducts(catalog.map(product => {
+          const rackStock = stockBySku[product.sku] || { available: 0, quantity: 0, reserved: 0 };
+          return {
+            ...product,
+            current_stock: rackStock.available,
+            catalog_stock: Number(product.current_stock || 0),
+            rack_quantity: rackStock.quantity,
+            reserved_quantity: rackStock.reserved,
+            stock_source: 'inventory.stock-by-rack',
+          };
+        }));
+        setRackStockLoaded(true);
+      } else {
+        console.error('Gagal mengambil stok rak untuk katalog POS:', rackStockResult.reason);
+        setProducts(catalog);
+        setRackStockLoaded(false);
+        showNotification?.('Stok rak belum dapat dimuat. Angka stok sementara mengikuti katalog produk.', 'error');
+      }
     } catch (error) {
       console.error('Gagal mengambil katalog POS:', error);
       showNotification?.(error.message, 'error');
@@ -54,6 +118,254 @@ const fetchSales = async () => {
   fetchSales();
 }, []);
 
+  // Simpan draft keranjang agar tidak hilang saat berpindah menu/halaman.
+  useEffect(() => {
+    try {
+      if (cart.length > 0) {
+        sessionStorage.setItem('digiwms_pos_cart', JSON.stringify(cart));
+      } else {
+        sessionStorage.removeItem('digiwms_pos_cart');
+      }
+    } catch (error) {
+      console.warn('Draft keranjang POS tidak dapat disimpan:', error);
+    }
+  }, [cart]);
+
+// Mengambil detail barang dan EPC berdasarkan invoice
+const fetchInvoiceDetail = async (invoiceNo) => {
+  setSelectedInvoice(invoiceNo);
+  setInvoiceDetail(null);
+  setInvoiceDetailLoading(true);
+
+  try {
+    const response = await apiRequest(
+      `/pos/sales/${encodeURIComponent(invoiceNo)}/items`
+    );
+
+    setInvoiceDetail(response.data);
+  } catch (error) {
+    console.error('Gagal mengambil detail invoice:', error);
+    showNotification?.(error.message, 'error');
+    setSelectedInvoice(null);
+  } finally {
+    setInvoiceDetailLoading(false);
+  }
+};
+
+// Cetak invoice POS
+const handlePrintInvoice = () => {
+  if (!invoiceDetail?.invoice || !invoiceDetail?.items) {
+    showNotification?.('Data invoice belum tersedia.', 'error');
+    return;
+  }
+
+  const invoice = invoiceDetail.invoice;
+  const items = invoiceDetail.items;
+
+  // Membuat barcode resmi dari kode Gate Pass.
+const gatePassCode = checkoutGatePass?.pass_code;
+let gatePassBarcodeHtml = '';
+
+if (gatePassCode) {
+  const barcodeSvg = document.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'svg'
+  );
+
+  JsBarcode(barcodeSvg, gatePassCode, {
+    format: 'CODE128',
+    width: 2,
+    height: 70,
+    displayValue: true,
+    fontSize: 14,
+    margin: 10,
+  });
+
+  gatePassBarcodeHtml = barcodeSvg.outerHTML;
+}
+
+  const printWindow = window.open('', '_blank', 'width=900,height=700');
+
+  if (!printWindow) {
+    showNotification?.('Izinkan pop-up browser untuk mencetak invoice.', 'error');
+    return;
+  }
+
+  const escapeHtml = (value) =>
+    String(value ?? '-').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;',
+    })[char]);
+
+  const formatMoney = (value) =>
+    new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      maximumFractionDigits: 0,
+    }).format(Number(value || 0));
+
+  const itemRows = items.map((item, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${escapeHtml(item.sku)}</td>
+      <td>${escapeHtml(item.product_name)}</td>
+      <td>${escapeHtml(item.epc)}</td>
+      <td>${formatMoney(item.unit_price)}</td>
+      <td>${item.already_returned ? 'Sudah Diretur' : 'Belum Diretur'}</td>
+    </tr>
+  `).join('');
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="UTF-8">
+      <title>Invoice ${escapeHtml(invoice.invoice_or_resi)}</title>
+      <style>
+        body {
+          font-family: Arial, sans-serif;
+          color: #1e293b;
+          padding: 30px;
+          font-size: 12px;
+        }
+        .header {
+          display: flex;
+          justify-content: space-between;
+          border-bottom: 2px solid #2563eb;
+          padding-bottom: 15px;
+        }
+        h1 { color: #1d4ed8; margin: 0; }
+        h2 { margin-top: 25px; }
+        .info {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 12px;
+          margin-top: 20px;
+        }
+        .info div { padding: 10px; background: #f1f5f9; }
+        .label { color: #64748b; font-size: 10px; }
+        .value { font-weight: bold; margin-top: 5px; }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 15px;
+        }
+        th, td {
+          border: 1px solid #cbd5e1;
+          padding: 9px;
+          text-align: left;
+          word-break: break-word;
+        }
+        th { background: #eff6ff; }
+        .total {
+          text-align: right;
+          font-size: 18px;
+          font-weight: bold;
+          margin-top: 20px;
+          color: #1d4ed8;
+        }
+        .footer {
+          margin-top: 35px;
+          text-align: center;
+          color: #64748b;
+          border-top: 1px solid #cbd5e1;
+          padding-top: 12px;
+        }
+        @page { size: A4; margin: 15mm; }
+        @media print {
+          th { print-color-adjust: exact; }
+          tr { break-inside: avoid; }
+        }
+      </style>
+    </head>
+    <body>
+      <header class="header">
+        <div>
+          <h1>DIGI WMS</h1>
+          <p>Warehouse Management System</p>
+        </div>
+        <div>
+          <h2>INVOICE PENJUALAN</h2>
+          <strong>${escapeHtml(invoice.invoice_or_resi)}</strong>
+        </div>
+      </header>
+
+      <section class="info">
+        <div>
+          <div class="label">Pelanggan</div>
+          <div class="value">${escapeHtml(invoice.customer_or_destination)}</div>
+        </div>
+        <div>
+          <div class="label">Tanggal Transaksi</div>
+          <div class="value">${invoice.created_at ? escapeHtml(new Date(invoice.created_at).toLocaleString('id-ID')) : '-'}</div>
+        </div>
+        <div>
+          <div class="label">Metode Pembayaran</div>
+          <div class="value">${escapeHtml(invoice.payment_method)}</div>
+        </div>
+        <div>
+          <div class="label">Status Pembayaran</div>
+          <div class="value">${escapeHtml(invoice.payment_status)}</div>
+        </div>
+        <div>
+          <div class="label">Nama Kasir</div>
+          <div class="value">${escapeHtml(invoice.cashier_or_pic)}</div>
+        </div>
+        <div>
+          <div class="label">Jumlah Barang</div>
+          <div class="value">${escapeHtml(invoice.total_items)} unit</div>
+        </div>
+      </section>
+
+      <h2>Rincian Barang</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>No.</th>
+            <th>SKU</th>
+            <th>Produk</th>
+            <th>EPC RFID</th>
+            <th>Harga</th>
+            <th>Status Retur</th>
+          </tr>
+        </thead>
+        <tbody>${itemRows}</tbody>
+      </table>
+
+      <div class="total">
+        Total Pembayaran: ${formatMoney(invoice.total_amount)}
+      </div>
+
+      ${gatePassBarcodeHtml ? `
+        <div style="text-align: center; margin: 20px 0;">
+          <h3>GATE PASS RESMI</h3>
+          ${gatePassBarcodeHtml}
+          <p>Scan barcode ini untuk verifikasi Gate Pass.</p>
+        </div>
+      ` : ''}
+
+      <footer class="footer">
+        Dokumen diterbitkan secara elektronik oleh DIGI WMS.
+        <br>Terima kasih atas transaksi Anda.
+      </footer>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.document.title = `Invoice - ${invoice.invoice_or_resi}`;
+
+  printWindow.onload = () => {
+    printWindow.focus();
+    printWindow.print();
+  };
+};
+
   const categories = useMemo(() => {
     const values = products
       .map(product => product.category)
@@ -81,8 +393,8 @@ const fetchSales = async () => {
 
 
 // Proses pemindaian RFID POS
-const handleScanRFID = async () => {
-  const epc = epcInput.trim();
+const handleScanRFID = async (receivedEpc = epcInput) => {
+  const epc = String(receivedEpc || '').trim();
 
   if (!epc) {
     showNotification?.('Masukkan EPC RFID terlebih dahulu.', 'error');
@@ -160,6 +472,32 @@ const handleScanRFID = async () => {
   }
 };
 
+// Menyimpan fungsi scan RFID terbaru untuk listener MQTT.
+handleScanRFIDRef.current = handleScanRFID;
+
+// Listener MQTT untuk Desktop RFID Reader POS
+useEffect(() => {
+  const client = createEmqxWebSocketClient((topic, data) => {
+    if (topic !== 'wms/pos/live-scan') return;
+    if (data.event !== 'POS_RFID_SCANNED') return;
+
+    const epc = String(data.epc || '').trim();
+
+    if (!epc) {
+      console.warn('[POS MQTT] EPC kosong:', data);
+      return;
+    }
+
+    console.log('[POS MQTT] RFID diterima:', epc);
+
+    handleScanRFIDRef.current?.(epc);
+  });
+
+  return () => {
+    client.end(true);
+    console.log('[POS MQTT] Koneksi ditutup.');
+  };
+}, []);
 
 // Proses checkout POS
 const handleCheckout = async () => {
@@ -197,14 +535,22 @@ const handleCheckout = async () => {
       }),
     });
 
+    // Simpan Gate Pass resmi dari respons checkout.
+    setCheckoutGatePass(response.data.gate_pass || null);
+
     showNotification?.(
       `Checkout berhasil. Invoice: ${response.data.invoice_no}`,
       'success'
     );
 
+    // Buka detail invoice setelah checkout berhasil
+    await fetchInvoiceDetail(response.data.invoice_no);
+
     setCart([]);
     setCustomerName('');
     setPaymentMethod('CASH');
+    setCashReceived('');
+    setCartModalOpen(false);
 
     await fetchSales();
     await fetchProducts();
@@ -216,6 +562,8 @@ const handleCheckout = async () => {
     setCart([]);
     setCustomerName('');
     setPaymentMethod('CASH');
+    setCashReceived('');
+    setCartModalOpen(false);
 
     await fetchSales();
     await fetchProducts();
@@ -377,6 +725,12 @@ const handleCheckout = async () => {
     0
   );
 
+  const cashReceivedAmount = Number(cashReceived || 0);
+  const cashChange = Math.max(0, cashReceivedAmount - total);
+  const cashPaymentInsufficient = paymentMethod === 'CASH' && cashReceivedAmount < total;
+  const formatCashInput = (value) =>
+    value ? Number(value).toLocaleString('id-ID') : '';
+
   const formatRupiah = (value) =>
     new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -438,10 +792,10 @@ const handleCheckout = async () => {
     {activePosTab === 'kasir' && (
   <>
     {/* MAIN LAYOUT */}
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-5 items-start">
+    <div className="grid grid-cols-1 gap-5 items-start">
 
         {/* KATALOG PRODUK */}
-        <section className="xl:col-span-2 bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section className="w-full bg-white border border-slate-200 rounded-2xl overflow-hidden">
 
           <div className="p-5 border-b border-slate-100">
             <div className="flex justify-between items-center mb-4">
@@ -450,7 +804,9 @@ const handleCheckout = async () => {
                   Katalog Produk
                 </h2>
                 <p className="text-xs text-slate-500 mt-1">
-                  Pilih produk untuk dimasukkan ke keranjang
+                  {rackStockLoaded
+                    ? 'Stok tersedia dihitung dari seluruh rak inventaris.'
+                    : 'Stok rak belum tersedia; angka mengikuti katalog produk.'}
                 </p>
               </div>
 
@@ -508,7 +864,7 @@ const handleCheckout = async () => {
                 />
 
                 <button
-                  onClick={handleScanRFID}
+                  onClick={() => handleScanRFID()}
                   disabled={scanLoading || !epcInput.trim()}
                   className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white rounded-lg text-sm font-bold transition"
                 >
@@ -556,6 +912,12 @@ const handleCheckout = async () => {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredProducts.map(product => {
                   const stock = Number(product.current_stock || 0);
+                  const noRackAllocation = stock <= 0 &&
+                    Number(product.rack_quantity || 0) <= 0 &&
+                    Number(product.catalog_stock || 0) > 0;
+                  const fullyReserved = stock <= 0 &&
+                    Number(product.rack_quantity || 0) > 0 &&
+                    Number(product.reserved_quantity || 0) > 0;
                   const price = Number(
                     product.unit_price ?? product.price ?? 0
                   );
@@ -580,12 +942,22 @@ const handleCheckout = async () => {
 
                         <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${
                           unavailable
-                            ? 'bg-rose-100 text-rose-600'
+                            ? fullyReserved
+                              ? 'bg-amber-100 text-amber-700'
+                              : noRackAllocation
+                                ? 'bg-sky-100 text-sky-700'
+                                : 'bg-rose-100 text-rose-600'
                             : stock <= 5
                               ? 'bg-amber-100 text-amber-700'
                               : 'bg-emerald-100 text-emerald-700'
                         }`}>
-                          {unavailable ? 'Habis' : `Stok ${stock}`}
+                          {unavailable
+                            ? fullyReserved
+                              ? 'Dipesan'
+                              : noRackAllocation
+                                ? 'Belum di rak'
+                                : 'Habis'
+                            : `Stok ${stock}`}
                         </span>
                       </div>
 
@@ -624,187 +996,264 @@ const handleCheckout = async () => {
           </div>
         </section>
 
-        {/* KERANJANG */}
-        <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden xl:sticky xl:top-4">
+      {/* Tombol keranjang mengambang */}
+      <button
+        type="button"
+        onClick={() => setCartModalOpen(true)}
+        className="fixed bottom-6 right-6 z-40 flex items-center gap-3 rounded-2xl bg-blue-600 px-5 py-4 text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-blue-700"
+        aria-label={`Buka keranjang, ${totalItems} item`}
+      >
+        <span className="relative text-2xl">
+          🛒
+          <span className="absolute -right-3 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-extrabold text-white">
+            {totalItems}
+          </span>
+        </span>
+        <span className="text-left">
+          <span className="block text-sm font-bold">Lihat Keranjang</span>
+          <span className="block text-xs text-blue-100">{formatRupiah(total)}</span>
+        </span>
+      </button>
 
-          <div className="p-5 border-b border-slate-100">
-            <div className="flex justify-between items-center gap-2">
+      {/* Modal keranjang transaksi */}
+      {cartModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-3 sm:p-5"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setCartModalOpen(false);
+          }}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pos-cart-modal-title"
+            className="flex h-[94vh] max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
               <div>
-                <h2 className="font-bold text-lg text-slate-900">
+                <h2 id="pos-cart-modal-title" className="text-lg font-bold text-slate-900">
                   Keranjang Transaksi
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">
-                  Daftar barang yang dibeli
+                <p className="mt-1 text-xs text-slate-500">
+                  Periksa barang dan data pembayaran sebelum checkout
                 </p>
+                <span className="mt-2 inline-flex rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
+                  {totalItems} Item
+                </span>
               </div>
-
-              <button
-                onClick={clearCart}
-                disabled={cart.length === 0}
-                className="text-xs font-bold text-rose-600 hover:bg-rose-50 px-3 py-2 rounded-lg disabled:text-slate-300 disabled:bg-transparent disabled:cursor-not-allowed"
-              >
-                🗑 Hapus Semua
-              </button>
-            </div>
-
-            <div className="mt-3">
-              <span className="bg-blue-100 text-blue-700 rounded-full px-3 py-1 text-xs font-bold">
-                {totalItems} Item
-              </span>
-            </div>
-          </div>
-
-          {/* CART ITEMS */}
-          <div className="p-5 space-y-3 max-h-[430px] overflow-y-auto">
-            {cart.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="text-5xl mb-3">🛒</div>
-                <p className="font-semibold text-slate-700">
-                  Keranjang masih kosong
-                </p>
-                <p className="text-xs text-slate-400 mt-2">
-                  Pilih produk dari katalog untuk memulai transaksi.
-                </p>
-              </div>
-            ) : (
-              cart.map(item => (
-                <div
-                  key={item.product_id}
-                  className="border border-slate-100 bg-slate-50 rounded-xl p-3"
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={clearCart}
+                  disabled={cart.length === 0}
+                  className="rounded-lg px-3 py-2 text-xs font-bold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:text-slate-300"
                 >
-                  <div className="flex justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm text-slate-800">
-                        {item.name}
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">
-                        {item.sku}
-                      </p>
-                    </div>
+                  🗑 Hapus Semua
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCartModalOpen(false)}
+                  className="rounded-lg px-3 py-2 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Tutup keranjang"
+                >
+                  &times;
+                </button>
+              </div>
+            </div>
 
-                    <button
-                      onClick={() => removeProduct(item.product_id)}
-                      className="text-rose-500 hover:bg-rose-50 rounded-lg px-2 py-1 text-xs font-bold h-fit"
+            {/* Hanya daftar barang yang memiliki scroll sendiri */}
+            <div className="min-h-[180px] flex-1 overflow-y-auto overscroll-contain p-4 sm:p-5">
+              {cart.length === 0 ? (
+                <div className="py-12 text-center">
+                  <div className="mb-3 text-5xl">🛒</div>
+                  <p className="font-semibold text-slate-700">Keranjang masih kosong</p>
+                  <p className="mt-2 text-sm text-slate-400">
+                    Pindai RFID dari katalog untuk memulai transaksi.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {cart.map(item => (
+                    <div
+                      key={item.product_id}
+                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
                     >
-                      Hapus
-                    </button>
-                  </div>
-                    
-              <div className="mt-3 space-y-2">
-                <p className="text-xs font-semibold text-slate-600">
-                  RFID Terpindai ({item.epcs?.length || 0} unit)
-                </p>
-
-                        {(item.epcs || []).map(epc => (
-                          <div
-                            key={epc}
-                            className="flex justify-between items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2"
-                          >
-                            <span className="text-[11px] font-mono text-slate-600 break-all">
-                              {epc}
-                            </span>
-
-                            <button
-                              onClick={() => removeScannedEpc(item.product_id, epc)}
-                              className="text-rose-500 hover:bg-rose-50 rounded px-2 py-1 text-xs font-bold shrink-0"
-                            >
-                              Hapus
-                            </button>
-                          </div>
-                        ))}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-sm text-slate-800">{item.name}</p>
+                          <p className="mt-1 text-xs text-slate-400">{item.sku}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeProduct(item.product_id)}
+                          className="shrink-0 rounded-lg px-3 py-1.5 text-xs font-bold text-rose-600 transition hover:bg-rose-50"
+                        >
+                          Hapus Produk
+                        </button>
                       </div>
 
-                      <div className="flex justify-between items-center mt-3">
-                        <span className="text-sm font-bold text-blue-700">
+                      <div className="mt-3">
+                        <p className="mb-2 text-xs font-semibold text-slate-600">
+                          RFID Terpindai ({item.epcs?.length || 0} unit)
+                        </p>
+                        <div className="space-y-2">
+                          {(item.epcs || []).map(epc => (
+                            <div
+                              key={epc}
+                              className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                            >
+                              <span className="break-all font-mono text-[11px] text-slate-600">
+                                {epc}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeScannedEpc(item.product_id, epc)}
+                                className="shrink-0 rounded px-2 py-1 text-xs font-bold text-rose-500 transition hover:bg-rose-50"
+                              >
+                                Hapus
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
+                        <span className="text-xs text-slate-500">
+                          {formatRupiah(item.price)} / unit
+                        </span>
+                        <span className="font-bold text-blue-700">
                           {formatRupiah(item.price * item.quantity)}
                         </span>
                       </div>
-
-                      <p className="text-[11px] text-slate-400 mt-2">
-                        {formatRupiah(item.price)} / unit
-                      </p>
-
+                    </div>
+                  ))}
                 </div>
-              ))
-            )}
-          </div>
+              )}
+            </div>
 
-          {/* DATA TRANSAKSI */}
-            <div className="p-5 border-t border-slate-100 space-y-3">
-              <h3 className="text-sm font-bold text-slate-800">
-                Data Transaksi
-              </h3>
-
+            {/* Ringkasan dan checkout tetap terlihat di bawah */}
+            <div className="max-h-[48%] shrink-0 space-y-3 overflow-y-auto overscroll-contain border-t border-slate-200 bg-white p-4 sm:px-5">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2">
-                  Nama Pelanggan
-                </label>
-                <input
-                  type="text"
-                  value={customerName}
-                  onChange={event => setCustomerName(event.target.value)}
-                  placeholder="Masukkan nama pelanggan"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100"
-                />
+                <h3 className="mb-3 text-sm font-bold text-slate-800">Data Transaksi</h3>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold text-slate-600">
+                      Nama Pelanggan
+                    </label>
+                    <input
+                      type="text"
+                      value={customerName}
+                      onChange={event => setCustomerName(event.target.value)}
+                      placeholder="Masukkan nama pelanggan"
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold text-slate-600">
+                      Metode Pembayaran
+                    </label>
+                    <select
+                      value={paymentMethod}
+                      onChange={event => {
+                        setPaymentMethod(event.target.value);
+                        if (event.target.value !== 'CASH') setCashReceived('');
+                      }}
+                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    >
+                      <option value="CASH">CASH</option>
+                      <option value="QRIS">QRIS</option>
+                    </select>
+                  </div>
+                </div>
+
+                {paymentMethod === 'CASH' && (
+                  <div className="mt-3">
+                    <label className="mb-2 block text-xs font-semibold text-slate-600">
+                      Uang yang Dibayarkan Pembeli
+                    </label>
+                    <div className="flex items-center rounded-lg border border-slate-200 bg-white px-3 transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+                      <span className="mr-2 text-sm font-semibold text-slate-500">Rp</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={formatCashInput(cashReceived)}
+                        onChange={event => {
+                          const digitsOnly = event.target.value.replace(/[^0-9]/g, '');
+                          setCashReceived(digitsOnly);
+                        }}
+                        placeholder="Masukkan nominal uang"
+                        className="w-full min-w-0 bg-transparent py-2.5 text-sm outline-none"
+                      />
+                    </div>
+                    <div className="mt-3 flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Uang diterima</span>
+                      <span className="font-semibold text-slate-800">
+                        {formatRupiah(cashReceivedAmount)}
+                      </span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-sm">
+                      <span className="text-slate-500">Kembalian</span>
+                      <span className={`text-base font-bold ${
+                        cashPaymentInsufficient ? 'text-slate-400' : 'text-emerald-600'
+                      }`}>
+                        {formatRupiah(cashChange)}
+                      </span>
+                    </div>
+                    {cashPaymentInsufficient && cashReceived !== '' && (
+                      <p className="mt-2 text-xs font-medium text-rose-600">
+                        Uang pembayaran kurang {formatRupiah(total - cashReceivedAmount)}.
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-2">
-                  Metode Pembayaran
-                </label>
-                <select
-                  value={paymentMethod}
-                  onChange={event => setPaymentMethod(event.target.value)}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-2 focus:ring-blue-100"
+              <div className="rounded-xl bg-slate-50 p-3">
+                <div className="flex justify-between text-sm text-slate-500">
+                  <span>Total item</span>
+                  <span>{totalItems}</span>
+                </div>
+                <div className="mt-2 flex justify-between text-sm text-slate-500">
+                  <span>Subtotal</span>
+                  <span>{formatRupiah(total)}</span>
+                </div>
+                <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
+                  <span className="font-bold text-slate-800">Total Pembayaran</span>
+                  <span className="text-xl font-extrabold text-blue-700">
+                    {formatRupiah(total)}
+                  </span>
+                </div>
+              </div>
+
+              {!customerName.trim() && (
+                <p className="text-xs text-amber-700">
+                  Isi nama pelanggan terlebih dahulu untuk melanjutkan checkout.
+                </p>
+              )}
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button
+                  type="button"
+                  onClick={() => setCartModalOpen(false)}
+                  className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
                 >
-                  <option value="CASH">CASH</option>
-                  <option value="QRIS">QRIS</option>
-                </select>
+                  Lanjut Pilih Barang
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCheckout}
+                  disabled={cart.length === 0 || checkoutLoading || scanLoading || cashPaymentInsufficient}
+                  className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                >
+                  {checkoutLoading ? 'Memproses Checkout...' : 'Checkout'}
+                </button>
               </div>
-            </div>
-
-          {/* PAYMENT SUMMARY */}
-          <div className="p-5 bg-slate-50 border-t border-slate-100">
-            <div className="flex justify-between text-sm text-slate-500">
-              <span>Total item</span>
-              <span>{totalItems}</span>
-            </div>
-
-            <div className="flex justify-between text-sm text-slate-500 mt-2">
-              <span>Subtotal</span>
-              <span>{formatRupiah(total)}</span>
-            </div>
-
-            <div className="border-t border-slate-200 mt-4 pt-4">
-              <div className="flex justify-between items-center">
-                <span className="font-bold text-slate-800">
-                  Total Pembayaran
-                </span>
-                <span className="text-xl font-extrabold text-blue-700">
-                  {formatRupiah(total)}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleCheckout}
-                disabled={
-                  cart.length === 0 ||
-                  checkoutLoading ||
-                  scanLoading
-                }
-                className="w-full mt-5 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 disabled:text-slate-500 text-white rounded-xl py-3.5 text-sm font-bold transition"
-              >
-                {checkoutLoading ? 'Memproses Checkout...' : 'Checkout'}
-              </button>
-
-              <p className="text-[10px] text-center text-slate-400 mt-3">
+              <p className="text-center text-[10px] text-slate-400">
                 Pembayaran CASH / QRIS dan penerbitan Gate Pass.
               </p>
-
             </div>
-          </div>
-        </section>
+          </section>
+        </div>
+      )}
       </div>
           </>
         )}
@@ -842,6 +1291,7 @@ const handleCheckout = async () => {
           <th className="px-5 py-3">Total</th>
           <th className="px-5 py-3">Pembayaran</th>
           <th className="px-5 py-3">Waktu</th>
+          <th className="px-5 py-3 text-center">Aksi</th>
         </tr>
       </thead>
 
@@ -861,9 +1311,15 @@ const handleCheckout = async () => {
         ) : (
           sales.map(sale => (
             <tr key={sale.id} className="hover:bg-slate-50">
-              <td className="px-5 py-4 font-semibold text-blue-700">
+              <td className="px-5 py-4">
+              <button
+                type="button"
+                onClick={() => fetchInvoiceDetail(sale.invoice_no)}
+                className="font-semibold text-blue-700 hover:text-blue-900 hover:underline"
+              >
                 {sale.invoice_no}
-              </td>
+              </button>
+            </td>
 
               <td className="px-5 py-4">
                 {sale.customer_name || 'Pelanggan Umum'}
@@ -892,6 +1348,16 @@ const handleCheckout = async () => {
                   ? new Date(sale.created_at).toLocaleString('id-ID')
                   : '-'}
               </td>
+
+              <td className="px-5 py-4 text-center">
+              <button
+                type="button"
+                onClick={() => fetchInvoiceDetail(sale.invoice_no)}
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-xs font-semibold transition"
+              >
+                Detail
+              </button>
+            </td>
             </tr>
           ))
         )}
@@ -900,6 +1366,122 @@ const handleCheckout = async () => {
   </div>
 </section>
   </>
+)}
+
+{/* MODAL DETAIL INVOICE */}
+{selectedInvoice && (
+  <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+
+      <div className="p-5 border-b border-slate-200 flex justify-between items-center">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">
+            Detail Invoice
+          </h2>
+          <p className="text-sm text-blue-700 font-semibold mt-1">
+            {selectedInvoice}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedInvoice(null);
+            setInvoiceDetail(null);
+          }}
+          className="text-slate-500 hover:text-red-600 text-2xl"
+        >
+          &times;
+        </button>
+      </div>
+
+      <div className="p-5">
+        {invoiceDetailLoading ? (
+          <div className="text-center py-10 text-slate-500">
+            Memuat detail invoice...
+          </div>
+        ) : invoiceDetail ? (
+          <>
+            <div className="mb-5">
+              <p className="text-xs text-slate-500">Nama pelanggan</p>
+              <p className="font-semibold text-slate-800">
+                {invoiceDetail.invoice?.customer_or_destination || 'Pelanggan Umum'}
+              </p>
+            </div>
+
+            <h3 className="font-bold text-slate-800 mb-3">
+              Daftar Barang dan RFID
+            </h3>
+
+            <div className="space-y-3">
+              {invoiceDetail.items?.length > 0 ? (
+                invoiceDetail.items.map((item, index) => (
+                  <div
+                    key={`${item.tag_id}-${index}`}
+                    className="border border-slate-200 rounded-xl p-4"
+                  >
+                    <div className="flex justify-between items-start gap-3">
+                      <div>
+                        <p className="font-bold text-slate-800">
+                          {item.sku}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1">
+                          EPC: {item.epc}
+                        </p>
+                      </div>
+
+                      <span className={`text-xs font-bold px-2 py-1 rounded-full ${
+                        item.already_returned
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-emerald-100 text-emerald-700'
+                      }`}>
+                        {item.already_returned ? 'Sudah Diretur' : 'Belum Diretur'}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 text-xs text-slate-500">
+                      Status RFID: <strong>{item.tag_status || '-'}</strong>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-slate-500">
+                  Tidak ada barang pada invoice ini.
+                </p>
+              )}
+            </div>
+          </>
+        ) : (
+          <p className="text-center py-8 text-slate-500">
+            Detail invoice tidak tersedia.
+          </p>
+        )}
+      </div>
+
+      <div className="p-4 border-t border-slate-200 flex justify-between items-center">
+        <button
+          type="button"
+          onClick={handlePrintInvoice}
+          disabled={invoiceDetailLoading || !invoiceDetail}
+          className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-5 py-2 rounded-lg text-sm font-semibold"
+        >
+          Cetak Invoice
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedInvoice(null);
+            setInvoiceDetail(null);
+          }}
+          className="bg-slate-800 hover:bg-slate-900 text-white px-5 py-2 rounded-lg text-sm font-semibold"
+        >
+          Tutup
+        </button>
+      </div>
+
+    </div>
+  </div>
 )}
   </div>
   );
