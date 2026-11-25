@@ -1,6 +1,29 @@
 import React, { useState } from 'react';
+import {
+  Command,
+  Eye,
+  EyeOff,
+  Loader2,
+  Radio,
+  FileText,
+  ShieldCheck,
+  AlertCircle,
+  ArrowRight,
+} from 'lucide-react';
 import { API_BASE_URL } from '../../config/api';
 import { tokenStorageKey, userStorageKey } from '../../config/authSession';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Input, Label } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { ThemeSwitch } from '@/components/layout/ThemeSwitch';
 
 export default function LoginPage({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
@@ -36,165 +59,215 @@ export default function LoginPage({ onLoginSuccess }) {
     }
   };
 
+  const quickAccounts = [
+    { u: 'admin.wms', label: 'Admin (Budi)', role: 'ADMIN' },
+    { u: 'sarah.jenkins', label: 'Supervisor (Sarah)', role: 'SUPERVISOR' },
+    { u: 'operator.inbound', label: 'Operator (Andi)', role: 'STAFF' },
+    { u: 'security.gate', label: 'Security (Hendra)', role: 'SECURITY' },
+  ];
+
   return (
-    <div className="min-h-screen w-full bg-slate-950 flex flex-col lg:flex-row font-sans text-slate-800">
-      {/* Panel Kiri: Branding & Informasi Infrastruktur RFID */}
-      <div className="lg:w-1/2 bg-gradient-to-br from-blue-900 via-slate-900 to-slate-950 p-8 sm:p-12 flex flex-col justify-between text-white relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-800">
-        <div className="absolute -right-20 -bottom-20 w-96 h-96 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
-
-        <div className="relative z-10 flex items-center space-x-3">
-          <div className="bg-blue-600 p-2.5 rounded-xl text-white shadow-lg shadow-blue-500/30">
-            <svg
-              className="w-6 h-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"
-              />
-            </svg>
-          </div>
-          <div>
-            <span className="font-extrabold text-xl tracking-wide text-white">DIGI WMS</span>
-            <span className="block text-xs text-blue-400 font-medium">
-              RFID Warehouse, Inventory & Gate Security System
-            </span>
-          </div>
-        </div>
-
-        <div className="relative z-10 my-10 max-w-lg">
-          <span className="bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wider">
-            Enterprise RBAC Security Portal
-          </span>
-          <h1 className="text-3xl sm:text-4xl font-extrabold mt-4 leading-tight">
-            Kendali Gudang & Keamanan RFID Terpadu
-          </h1>
-          <p className="text-slate-300 text-sm mt-3 leading-relaxed">
-            Sistem manajemen pergudangan berbasis <b>Immutable Stock Ledger</b> dan broker{' '}
-            <b>EMQX MQTT Real-Time</b> pada frekuensi UHF 920–923 MHz.
-          </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-8">
-            <div className="bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
-              <span className="text-lg">📡</span>
-              <p className="text-xs font-bold text-white mt-1">UHF RFID Live</p>
-              <p className="text-[11px] text-slate-400">Encoding & Opname Nirkabel</p>
-            </div>
-            <div className="bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
-              <span className="text-lg">📜</span>
-              <p className="text-xs font-bold text-white mt-1">Append-Only Ledger</p>
-              <p className="text-[11px] text-slate-400">Anti-Manipulasi Stok</p>
-            </div>
-            <div className="bg-slate-900/70 border border-slate-800 p-3.5 rounded-2xl">
-              <span className="text-lg">🛡️</span>
-              <p className="text-xs font-bold text-white mt-1">RBAC & Audit Trail</p>
-              <p className="text-[11px] text-slate-400">Otorisasi Berlapis</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="relative z-10 text-xs text-slate-500 flex items-center justify-between">
-          <span>© 2026 DIGI WMS — Modul Infrastruktur & Auth (Orang 4)</span>
-          <span className="text-emerald-400 font-mono">● Server Ready</span>
-        </div>
+    <div className="relative grid min-h-screen w-full lg:grid-cols-2 bg-background text-foreground">
+      {/* Top-right Theme Switch */}
+      <div className="absolute right-4 top-4 z-20">
+        <ThemeSwitch />
       </div>
 
-      {/* Panel Kanan: Form Login Pengguna */}
-      <div className="lg:w-1/2 flex items-center justify-center p-6 sm:p-12 bg-slate-100">
-        <div className="w-full max-w-md bg-white rounded-3xl shadow-xl border border-slate-200 p-8">
-          <div className="mb-6">
-            <h2 className="text-2xl font-extrabold text-slate-900">Login Personel Gudang</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Masukkan kredensial akun Anda untuk mengakses dashboard sesuai Role (RBAC).
+      {/* Left Panel (Shadcn Admin Auth Split Showcase) */}
+      <div className="relative hidden flex-col justify-between bg-muted/40 p-10 border-r lg:flex dark:bg-card">
+        <div className="flex items-center gap-2.5 text-lg font-semibold">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Command className="h-4 w-4" />
+          </div>
+          <span>DIGI WMS</span>
+          <Badge variant="secondary" className="ml-1 font-mono text-[10px]">
+            RFID + POS
+          </Badge>
+        </div>
+
+        <div className="my-auto max-w-md space-y-6">
+          <Badge variant="outline" className="px-2.5 py-0.5 text-xs">
+            Enterprise RBAC Security Portal
+          </Badge>
+
+          <div className="space-y-2">
+            <h1 className="text-3xl font-bold tracking-tight">
+              Kendali Gudang & Keamanan RFID Terpadu
+            </h1>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              Sistem manajemen pergudangan berbasis{' '}
+              <span className="font-medium text-foreground">
+                Immutable Stock Ledger
+              </span>{' '}
+              dan broker{' '}
+              <span className="font-medium text-foreground">
+                EMQX MQTT Real-Time
+              </span>{' '}
+              pada frekuensi UHF 920–923 MHz.
             </p>
           </div>
 
-          {errorMsg && (
-            <div className="mb-5 p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold flex items-center space-x-2">
-              <span>🚨</span>
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Username
-              </label>
-              <input
-                type="text"
-                required
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="Contoh: admin.wms atau sarah.jenkins"
-                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Masukkan password akun..."
-                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:bg-white transition pr-16"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 px-3.5 text-xs font-semibold text-slate-500 hover:text-slate-800"
-                >
-                  {showPassword ? 'Sembunyi' : 'Lihat'}
-                </button>
+          <div className="grid gap-3 pt-2">
+            <div className="flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-sm">
+              <div className="rounded-md bg-secondary p-2 text-foreground">
+                <Radio className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">UHF RFID Live</p>
+                <p className="text-xs text-muted-foreground">
+                  Encoding tag, opname handheld, dan deteksi gerbang real-time.
+                </p>
               </div>
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold py-3 rounded-xl text-sm shadow-lg shadow-blue-600/25 transition-all"
-            >
-              {loading ? 'Memverifikasi Kredensial...' : 'Masuk ke Sistem DIGI WMS →'}
-            </button>
-
-            <div className="pt-4 border-t border-slate-100">
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">
-                Akun Cepat (Klik untuk Isi Otomatis — Password: <code className="text-blue-600">123456</code>)
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {[
-                  { u: 'admin.wms', label: 'Admin (Budi)' },
-                  { u: 'sarah.jenkins', label: 'Supervisor (Sarah)' },
-                  { u: 'operator.inbound', label: 'Operator (Andi)' },
-                  { u: 'security.gate', label: 'Security (Hendra)' },
-                ].map((acc) => (
-                  <button
-                    key={acc.u}
-                    type="button"
-                    onClick={() => {
-                      setUsername(acc.u);
-                      setPassword('123456');
-                      setErrorMsg('');
-                    }}
-                    className="px-3 py-2 text-left rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-300 transition text-xs"
-                  >
-                    <span className="font-bold text-slate-800 block">{acc.label}</span>
-                    <span className="font-mono text-[10px] text-blue-600">@{acc.u}</span>
-                  </button>
-                ))}
+            <div className="flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-sm">
+              <div className="rounded-md bg-secondary p-2 text-foreground">
+                <FileText className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">Append-Only Stock Ledger</p>
+                <p className="text-xs text-muted-foreground">
+                  Pencatatan mutasi stok transparan dan anti-manipulasi.
+                </p>
               </div>
             </div>
-          </form>
+
+            <div className="flex items-start gap-3 rounded-lg border bg-card p-3.5 shadow-sm">
+              <div className="rounded-md bg-secondary p-2 text-foreground">
+                <ShieldCheck className="h-4 w-4" />
+              </div>
+              <div>
+                <p className="text-sm font-medium">RBAC & Audit Trail</p>
+                <p className="text-xs text-muted-foreground">
+                  Otorisasi berlapis untuk Admin, Supervisor, Operator, dan Security.
+                </p>
+              </div>
+            </div>
+          </div>
         </div>
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>© 2026 DIGI WMS — Modul Infrastruktur & Auth</span>
+          <span className="inline-flex items-center gap-1.5 font-mono text-emerald-600 dark:text-emerald-400">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Server Ready
+          </span>
+        </div>
+      </div>
+
+      {/* Right Panel: Shadcn Admin Sign-In Card */}
+      <div className="flex flex-col items-center justify-center p-6 sm:p-10">
+        <div className="mb-6 flex items-center gap-2 lg:hidden">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+            <Command className="h-4 w-4" />
+          </div>
+          <span className="text-lg font-bold tracking-tight">DIGI WMS</span>
+        </div>
+
+        <Card className="w-full max-w-md">
+          <CardHeader className="space-y-1">
+            <CardTitle className="text-xl tracking-tight">
+              Masuk ke DIGI WMS
+            </CardTitle>
+            <CardDescription>
+              Masukkan kredensial personel gudang untuk mengakses sistem sesuai
+              hak akses (RBAC).
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            {errorMsg && (
+              <div className="mb-4 flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-xs font-medium text-destructive">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{errorMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label htmlFor="login-username">Username</Label>
+                <Input
+                  id="login-username"
+                  type="text"
+                  required
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="admin.wms atau sarah.jenkins"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="login-password">Password</Label>
+                <div className="relative">
+                  <Input
+                    id="login-password"
+                    type={showPassword ? 'text' : 'password'}
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute inset-y-0 right-0 flex items-center px-3 text-muted-foreground hover:text-foreground"
+                    title={showPassword ? 'Sembunyikan' : 'Tampilkan'}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <Button type="submit" disabled={loading} className="w-full">
+                {loading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Memverifikasi...
+                  </>
+                ) : (
+                  <>
+                    Masuk ke Sistem
+                    <ArrowRight className="h-4 w-4" />
+                  </>
+                )}
+              </Button>
+            </form>
+          </CardContent>
+
+          <CardFooter className="flex flex-col items-stretch border-t pt-4">
+            <p className="mb-2.5 text-[11px] font-medium text-muted-foreground">
+              Akun Demo Cepat (Password:{' '}
+              <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
+                123456
+              </code>
+              )
+            </p>
+            <div className="grid grid-cols-2 gap-2">
+              {quickAccounts.map((acc) => (
+                <button
+                  key={acc.u}
+                  type="button"
+                  onClick={() => {
+                    setUsername(acc.u);
+                    setPassword('123456');
+                    setErrorMsg('');
+                  }}
+                  className="flex flex-col rounded-md border bg-muted/30 px-3 py-2 text-left transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <span className="text-xs font-medium">{acc.label}</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    @{acc.u}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </CardFooter>
+        </Card>
       </div>
     </div>
   );

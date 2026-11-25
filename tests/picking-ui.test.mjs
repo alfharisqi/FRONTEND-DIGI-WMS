@@ -57,7 +57,9 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
       }));
       return {
         id: orderId, order_number: 'ORD-UI-TEST', requested_qty: 5, picked_qty: scans.length,
-        status: remaining === 0 ? 'SIAP_PACKING' : scans.length ? 'SEDANG_DIAMBIL' : 'MENUNGGU_PICKING',
+        status: packingStatus === 'SELESAI_PACKING' ? 'DIKIRIM'
+          : remaining === 0 ? 'SIAP_PACKING' : scans.length ? 'SEDANG_DIAMBIL' : 'MENUNGGU_PICKING',
+        shipping_stage: packingStatus === 'SELESAI_PACKING' ? 'AUTHORIZED_OUT' : null,
         packing_status: packingStatus, lines: [line],
       };
     };
@@ -120,12 +122,12 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
     page.on('pageerror', error => errors.push(error.message));
     page.setDefaultTimeout(6000);
     await page.goto(origin);
-    await page.getByPlaceholder(/Contoh: admin/).fill('tester');
-    await page.getByPlaceholder(/Masukkan password akun/).fill('fixture-password');
+    await page.getByLabel('Username', { exact: true }).fill('tester');
+    await page.getByLabel('Password', { exact: true }).fill('fixture-password');
     await page.getByRole('button', { name: /Masuk ke Sistem/ }).click();
     const navigate = () => page.getByRole('button', { name: 'Picking & Packing', exact: true }).click();
     await navigate();
-    for (const name of ['Menunggu Picking', 'Sedang Diambil', 'Siap Packing']) {
+    for (const name of ['Menunggu Picking', 'Sedang Diambil', 'Siap Packing', 'Dikirim / Kurir']) {
       await page.getByRole('region', { name, exact: true }).waitFor();
     }
     await page.getByRole('button', { name: 'Buat Pesanan Picking' }).click();
@@ -197,6 +199,10 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
       const rect = element.getBoundingClientRect();
       return rect.left >= 0 && rect.right <= innerWidth && element.scrollWidth <= element.clientWidth;
     }));
+    await dialog.getByRole('button', { name: 'Tutup' }).click();
+    const shipped = page.getByRole('region', { name: 'Dikirim / Kurir' }).getByRole('article', { name: 'ORD-UI-TEST' });
+    await shipped.getByText('Diserahkan ke Kurir', { exact: true }).waitFor();
+    assert.equal(await shipped.getByRole('button', { name: /Picking|Packing/ }).count(), 0);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

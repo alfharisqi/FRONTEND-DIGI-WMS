@@ -2,25 +2,219 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: 'Inter', sans-serif;
+@layer base {
+  :root {
+    --radius: 0.625rem;
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 222.2 47.4% 11.2%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 215 20.2% 65.1%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+
+    --sidebar-background: 0 0% 100%;
+    --sidebar-foreground: 222.2 84% 4.9%;
+    --sidebar-primary: 222.2 47.4% 11.2%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 210 40% 96.1%;
+    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
+    --sidebar-border: 214.3 31.8% 91.4%;
+    --sidebar-ring: 215 20.2% 65.1%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 65% 6.5%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 47.4% 11.2%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 210 40% 98%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 20%;
+    --ring: 215 20.2% 55%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+
+    --sidebar-background: 222.2 84% 4.9%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 210 40% 98%;
+    --sidebar-primary-foreground: 222.2 47.4% 11.2%;
+    --sidebar-accent: 217.2 32.6% 17.5%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 217.2 32.6% 17.5%;
+    --sidebar-ring: 215 20.2% 55%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
 }
 
+/* ==========================================================================
+   SHADCN ADMIN SURFACE HARMONIZATION FOR MODULE PAGES (LIGHT & DARK MODE)
+   Ensures all DigiWMS vertical-slice modules automatically match shadcn-admin
+   surfaces, borders, inputs, tables, and typography cleanly in both themes.
+   ========================================================================== */
+.shadcn-module-scope input:not([type='checkbox']):not([type='radio']),
+.shadcn-module-scope select,
+.shadcn-module-scope textarea {
+  transition: border-color 150ms ease, box-shadow 150ms ease, background-color 150ms ease;
+}
+
+.shadcn-module-scope input:not([type='checkbox']):not([type='radio']):focus,
+.shadcn-module-scope select:focus,
+.shadcn-module-scope textarea:focus {
+  outline: none;
+  border-color: hsl(var(--ring));
+  box-shadow: 0 0 0 2px hsl(var(--ring) / 0.25);
+}
+
+/* Harmonize primary action buttons & tables across all modules to Shadcn Admin palette */
+.shadcn-module-scope button.bg-blue-600 {
+  background-color: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-radius: calc(var(--radius) - 2px);
+}
+.shadcn-module-scope button.bg-blue-600:hover {
+  background-color: hsl(var(--primary) / 0.9);
+}
+.shadcn-module-scope table thead {
+  background-color: hsl(var(--muted) / 0.5);
+  color: hsl(var(--muted-foreground));
+}
+.shadcn-module-scope table tbody tr:hover {
+  background-color: hsl(var(--muted) / 0.35);
+}
+
+.dark .shadcn-module-scope .bg-white {
+  background-color: hsl(var(--card)) !important;
+}
+.dark .shadcn-module-scope .bg-slate-50,
+.dark .shadcn-module-scope .bg-gray-50 {
+  background-color: hsl(var(--muted) / 0.55) !important;
+}
+.dark .shadcn-module-scope .bg-slate-100,
+.dark .shadcn-module-scope .bg-gray-100 {
+  background-color: hsl(var(--secondary)) !important;
+}
+.dark .shadcn-module-scope .bg-slate-200 {
+  background-color: hsl(var(--muted)) !important;
+}
+.dark .shadcn-module-scope .border-slate-100,
+.dark .shadcn-module-scope .border-slate-200,
+.dark .shadcn-module-scope .border-slate-300,
+.dark .shadcn-module-scope .border-gray-200,
+.dark .shadcn-module-scope .divide-slate-100 > :not([hidden]) ~ :not([hidden]),
+.dark .shadcn-module-scope .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: hsl(var(--border)) !important;
+}
+.dark .shadcn-module-scope .text-slate-900,
+.dark .shadcn-module-scope .text-slate-800,
+.dark .shadcn-module-scope .text-gray-900,
+.dark .shadcn-module-scope .text-gray-800 {
+  color: hsl(var(--foreground)) !important;
+}
+.dark .shadcn-module-scope .text-slate-700,
+.dark .shadcn-module-scope .text-slate-600,
+.dark .shadcn-module-scope .text-gray-700,
+.dark .shadcn-module-scope .text-gray-600 {
+  color: hsl(var(--foreground) / 0.85) !important;
+}
+.dark .shadcn-module-scope .text-slate-500,
+.dark .shadcn-module-scope .text-slate-400,
+.dark .shadcn-module-scope .text-gray-500 {
+  color: hsl(var(--muted-foreground)) !important;
+}
+.dark .shadcn-module-scope .hover\:bg-slate-50:hover,
+.dark .shadcn-module-scope .hover\:bg-slate-100:hover,
+.dark .shadcn-module-scope .hover\:bg-blue-50\/40:hover {
+  background-color: hsl(var(--accent)) !important;
+}
+.dark .shadcn-module-scope input,
+.dark .shadcn-module-scope select,
+.dark .shadcn-module-scope textarea {
+  background-color: hsl(var(--background)) !important;
+  color: hsl(var(--foreground)) !important;
+  border-color: hsl(var(--input)) !important;
+}
+.dark .shadcn-module-scope .bg-blue-50,
+.dark .shadcn-module-scope .bg-indigo-50 {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+}
+.dark .shadcn-module-scope .bg-emerald-50,
+.dark .shadcn-module-scope .bg-green-50 {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+}
+.dark .shadcn-module-scope .bg-amber-50,
+.dark .shadcn-module-scope .bg-yellow-50 {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+.dark .shadcn-module-scope .bg-rose-50,
+.dark .shadcn-module-scope .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.14) !important;
+}
+.dark .shadcn-module-scope .bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.14) !important;
+}
+
+/* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: hsl(var(--border));
+  border-radius: 9999px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: hsl(var(--muted-foreground) / 0.5);
 }
 
+/* RFID Radar & Gate Strobe Animations */
 @keyframes radarSweep {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
@@ -46,29 +240,25 @@ body {
 }
 
 /* ==========================================================================
-   DRIVER.JS INTERACTIVE GUIDEBOOK POPOVER THEME (LIGHT & DARK MODE)
-   Design System: Inter, Rounded-2xl (16px), Blue-600 Accent, Slate Palette
+   DRIVER.JS INTERACTIVE GUIDEBOOK POPOVER THEME (SHADCN ADMIN TOKENS)
    ========================================================================== */
 .driver-popover.app-guidebook-popover {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-  background-color: #ffffff;
-  color: #0f172a;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
   padding: 20px;
   max-width: 380px;
-  box-shadow:
-    0 20px 25px -5px rgba(15, 23, 42, 0.16),
-    0 8px 10px -6px rgba(15, 23, 42, 0.08),
-    0 0 0 1px rgba(37, 99, 235, 0.08);
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.16), 0 8px 10px -6px rgba(15, 23, 42, 0.08);
 }
 
 .driver-popover.app-guidebook-popover .driver-popover-title {
   font-family: 'Inter', sans-serif;
-  font-size: 1rem;
-  font-weight: 800;
+  font-size: 0.95rem;
+  font-weight: 700;
   line-height: 1.35;
-  color: #0f172a;
+  color: hsl(var(--popover-foreground));
   margin-bottom: 6px;
   padding-right: 24px;
   letter-spacing: -0.01em;
@@ -78,15 +268,15 @@ body {
   font-family: 'Inter', sans-serif;
   font-size: 0.84rem;
   line-height: 1.6;
-  color: #475569;
+  color: hsl(var(--muted-foreground));
   margin-bottom: 14px;
 }
 
 .driver-popover.app-guidebook-popover .driver-popover-close-btn {
-  color: #94a3b8;
+  color: hsl(var(--muted-foreground));
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  border-radius: 6px;
   top: 14px;
   right: 14px;
   display: flex;
@@ -96,14 +286,14 @@ body {
 }
 
 .driver-popover.app-guidebook-popover .driver-popover-close-btn:hover {
-  background-color: #f1f5f9;
-  color: #0f172a;
+  background-color: hsl(var(--accent));
+  color: hsl(var(--accent-foreground));
 }
 
 .driver-popover.app-guidebook-popover .driver-popover-footer {
   margin-top: 14px;
   padding-top: 12px;
-  border-top: 1px solid #f1f5f9;
+  border-top: 1px solid hsl(var(--border));
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -112,12 +302,12 @@ body {
 
 .driver-popover.app-guidebook-popover .driver-popover-progress-text {
   font-family: 'Inter', sans-serif;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #2563eb;
-  background-color: #eff6ff;
-  border: 1px solid #dbeafe;
-  padding: 4px 10px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: hsl(var(--secondary-foreground));
+  background-color: hsl(var(--secondary));
+  border: 1px solid hsl(var(--border));
+  padding: 3px 9px;
   border-radius: 9999px;
 }
 
@@ -130,123 +320,33 @@ body {
 .driver-popover.app-guidebook-popover .driver-popover-prev-btn {
   font-family: 'Inter', sans-serif !important;
   font-size: 0.78rem !important;
-  font-weight: 600 !important;
-  color: #475569 !important;
-  background-color: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  border-radius: 10px !important;
+  font-weight: 500 !important;
+  color: hsl(var(--foreground)) !important;
+  background-color: hsl(var(--background)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+  border-radius: 6px !important;
   padding: 6px 12px !important;
   text-shadow: none !important;
-  transition: all 0.15s ease !important;
 }
 
 .driver-popover.app-guidebook-popover .driver-popover-prev-btn:hover {
-  background-color: #f1f5f9 !important;
-  color: #0f172a !important;
-  border-color: #cbd5e1 !important;
+  background-color: hsl(var(--accent)) !important;
 }
 
 .driver-popover.app-guidebook-popover .driver-popover-next-btn,
 .driver-popover.app-guidebook-popover .driver-popover-done-btn {
   font-family: 'Inter', sans-serif !important;
   font-size: 0.78rem !important;
-  font-weight: 700 !important;
-  color: #ffffff !important;
-  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
-  border: 1px solid #1d4ed8 !important;
-  border-radius: 10px !important;
+  font-weight: 600 !important;
+  color: hsl(var(--primary-foreground)) !important;
+  background: hsl(var(--primary)) !important;
+  border: 1px solid hsl(var(--primary)) !important;
+  border-radius: 6px !important;
   padding: 6px 14px !important;
   text-shadow: none !important;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.25) !important;
-  transition: all 0.15s ease !important;
 }
 
 .driver-popover.app-guidebook-popover .driver-popover-next-btn:hover,
 .driver-popover.app-guidebook-popover .driver-popover-done-btn:hover {
-  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.35) !important;
-}
-
-/* Popover Arrow Colors — Light Mode */
-.driver-popover.app-guidebook-popover .driver-popover-arrow-side-left.driver-popover-arrow {
-  border-left-color: #ffffff;
-}
-.driver-popover.app-guidebook-popover .driver-popover-arrow-side-right.driver-popover-arrow {
-  border-right-color: #ffffff;
-}
-.driver-popover.app-guidebook-popover .driver-popover-arrow-side-top.driver-popover-arrow {
-  border-top-color: #ffffff;
-}
-.driver-popover.app-guidebook-popover .driver-popover-arrow-side-bottom.driver-popover-arrow {
-  border-bottom-color: #ffffff;
-}
-
-/* Dark Mode Support (.dark or [data-theme="dark"]) */
-.dark .driver-popover.app-guidebook-popover,
-[data-theme="dark"] .driver-popover.app-guidebook-popover {
-  background-color: #0f172a;
-  color: #f8fafc;
-  border-color: #1e293b;
-  box-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.5),
-    0 0 0 1px rgba(59, 130, 246, 0.25);
-}
-
-.dark .driver-popover.app-guidebook-popover .driver-popover-title,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-title {
-  color: #f8fafc;
-}
-
-.dark .driver-popover.app-guidebook-popover .driver-popover-description,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-description {
-  color: #cbd5e1;
-}
-
-.dark .driver-popover.app-guidebook-popover .driver-popover-close-btn:hover,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-close-btn:hover {
-  background-color: #1e293b;
-  color: #f8fafc;
-}
-
-.dark .driver-popover.app-guidebook-popover .driver-popover-footer,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-footer {
-  border-top-color: #1e293b;
-}
-
-.dark .driver-popover.app-guidebook-popover .driver-popover-progress-text,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-progress-text {
-  color: #60a5fa;
-  background-color: rgba(37, 99, 235, 0.15);
-  border-color: rgba(59, 130, 246, 0.3);
-}
-
-.dark .driver-popover.app-guidebook-popover .driver-popover-prev-btn,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-prev-btn {
-  color: #cbd5e1 !important;
-  background-color: #1e293b !important;
-  border-color: #334155 !important;
-}
-
-.dark .driver-popover.app-guidebook-popover .driver-popover-prev-btn:hover,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-prev-btn:hover {
-  background-color: #334155 !important;
-  color: #ffffff !important;
-}
-
-/* Popover Arrow Colors — Dark Mode */
-.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-left.driver-popover-arrow,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-left.driver-popover-arrow {
-  border-left-color: #0f172a;
-}
-.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-right.driver-popover-arrow,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-right.driver-popover-arrow {
-  border-right-color: #0f172a;
-}
-.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-top.driver-popover-arrow,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-top.driver-popover-arrow {
-  border-top-color: #0f172a;
-}
-.dark .driver-popover.app-guidebook-popover .driver-popover-arrow-side-bottom.driver-popover-arrow,
-[data-theme="dark"] .driver-popover.app-guidebook-popover .driver-popover-arrow-side-bottom.driver-popover-arrow {
-  border-bottom-color: #0f172a;
+  opacity: 0.9;
 }

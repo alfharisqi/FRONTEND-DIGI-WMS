@@ -1,19 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ClipboardCheck, Package, PackageCheck, Plus, RefreshCw, ScanLine, Search } from 'lucide-react';
+import { CheckCircle2, ClipboardCheck, ClipboardList, Package, PackageCheck, Plus, RefreshCw, ScanLine, Search, Send } from 'lucide-react';
 import { pickingRequest, validatePickingSelection } from './api';
 import { inboundRequest } from '../orang1-inbound/api';
 import PackingDetailsDialog from './PackingDetailsDialog';
 
 const columns = [
-  { status: 'MENUNGGU_PICKING', label: 'Menunggu Picking', tone: 'bg-amber-100 text-amber-800', icon: Package },
-  { status: 'SEDANG_DIAMBIL', label: 'Sedang Diambil', tone: 'bg-blue-100 text-blue-800', icon: ScanLine },
-  { status: 'SIAP_PACKING', label: 'Siap Packing', tone: 'bg-emerald-100 text-emerald-800', icon: PackageCheck },
+  { status: 'MENUNGGU_PICKING', label: 'Menunggu Picking', tone: 'bg-amber-500/15 text-amber-700 dark:text-amber-400', icon: Package },
+  { status: 'SEDANG_DIAMBIL', label: 'Sedang Diambil', tone: 'bg-blue-500/15 text-blue-700 dark:text-blue-400', icon: ScanLine },
+  { status: 'SIAP_PACKING', label: 'Siap Packing', tone: 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400', icon: PackageCheck },
+  { status: 'DIKIRIM', label: 'Dikirim / Kurir', tone: 'bg-violet-500/15 text-violet-700 dark:text-violet-400', icon: Send },
 ];
 
-const button = 'inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 disabled:opacity-50';
-const primary = `${button} bg-blue-600 text-white hover:bg-blue-700`;
-const secondary = `${button} border border-slate-200 bg-white text-slate-700 hover:bg-slate-50`;
-const input = 'w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-100';
+const button = 'inline-flex items-center justify-center gap-2 rounded-md px-3.5 py-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-50';
+const primary = `${button} bg-primary text-primary-foreground shadow-sm hover:bg-primary/90`;
+const secondary = `${button} border border-input bg-background text-foreground shadow-sm hover:bg-accent hover:text-accent-foreground`;
+const input = 'flex h-9 w-full min-w-0 rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
 
 function Progress({ order }) {
   return (
@@ -41,35 +42,50 @@ function RackList({ locations }) {
 }
 
 function OrderCard({ order, column, open }) {
+  const shipped = order.status === 'DIKIRIM';
+  const exited = order.shipping_stage === 'EXITED';
   const ready = order.status === 'SIAP_PACKING';
   const complete = order.packing_status === 'SELESAI_PACKING';
   const picked = order.lines.every(line => line.picked_qty === line.requested_qty);
   const action = ready ? 'Checklist Packing' : order.status === 'MENUNGGU_PICKING' ? 'Mulai Picking' : 'Lanjut Picking';
+  const badgeText = shipped
+    ? (exited ? 'Keluar Gerbang RFID' : 'Diserahkan ke Kurir')
+    : complete
+    ? 'Packing Selesai'
+    : column.label;
+  const badgeTone = shipped
+    ? (exited ? 'bg-emerald-600 text-white' : 'bg-violet-600 text-white')
+    : complete
+    ? 'bg-emerald-700 text-white'
+    : column.tone;
+
   return (
-    <article className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-label={order.order_number}>
+    <article className="space-y-3 rounded-xl border border-border bg-card p-4 shadow-sm" aria-label={order.order_number}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="break-all font-bold text-slate-900">{order.order_number}</h3>
-        <span className={`rounded-full px-2 py-1 text-xs font-semibold ${complete ? 'bg-emerald-700 text-white' : column.tone}`}>{complete ? 'Packing Selesai' : column.label}</span>
+        <h3 className="break-all font-bold text-foreground">{order.order_number}</h3>
+        <span className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${badgeTone}`}>{badgeText}</span>
       </div>
       <ul className="space-y-2.5">
         {order.lines.map(line => (
           <li key={line.product_id} className="space-y-1">
-            <p className="text-sm font-medium text-slate-800">{line.product_name} <span className="text-slate-500">· {line.sku}</span></p>
-            <p className="text-xs text-slate-600">{line.picked_qty}/{line.requested_qty} unit</p>
+            <p className="text-sm font-medium text-foreground">{line.product_name} <span className="text-muted-foreground">· {line.sku}</span></p>
+            <p className="text-xs text-muted-foreground">{line.picked_qty}/{line.requested_qty} unit</p>
             {line.picked_qty < line.requested_qty && <RackList locations={line.locations} />}
             {!ready && line.shortage_qty > 0 && (
-              <p className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+              <p className="rounded-md bg-amber-500/15 px-2 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
                 Kekurangan stok · {line.shortage_qty} unit
               </p>
             )}
-            {line.scans.length > 0 && <p className="text-xs text-slate-600">Rak scan: {[...new Set(line.scans.map(scan => scan.location_code))].join(', ')}</p>}
+            {line.scans.length > 0 && <p className="text-xs text-muted-foreground">Rak scan: {[...new Set(line.scans.map(scan => scan.location_code))].join(', ')}</p>}
           </li>
         ))}
       </ul>
       <Progress order={order} />
       <div className="flex flex-wrap gap-2">
         <button className={secondary} onClick={() => open(order.id, 'detail')}>Detail</button>
-        <button className={primary} disabled={ready && !picked} onClick={() => open(order.id, ready ? 'packing' : 'scan')}>{action}</button>
+        {!shipped && (
+          <button className={primary} disabled={ready && !picked} onClick={() => open(order.id, ready ? 'packing' : 'scan')}>{action}</button>
+        )}
       </div>
     </article>
   );
@@ -441,7 +457,17 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
   return (
     <div className="space-y-5">
       <header className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold text-slate-900">Picking &amp; Packing</h2>
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+            <ClipboardList className="h-4 w-4" />
+          </div>
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Picking &amp; Packing</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Pantau progres pengambilan barang, checklist packing, hingga serah terima kurir.
+            </p>
+          </div>
+        </div>
         <div className="flex items-center gap-2">
           <button type="button" className={primary} onClick={openCreateOrderModal}>
             <Plus size={16} /> Buat Pesanan Picking
@@ -483,7 +509,7 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{error}{orders.length > 0 ? ' Daftar menampilkan hasil terakhir.' : ''}</p>}
       {!loading && !error && !orders.length && <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Belum ada pesanan picking.</p>}
       {(orders.length > 0 || (!loading && !error)) && (
-        <div className="grid items-start gap-4 xl:grid-cols-3">
+        <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
           {columns.filter(column => !status || status === column.status).map(column => {
             const cards = matches.filter(order => order.status === column.status);
             const Icon = column.icon;

@@ -1,5 +1,36 @@
 import React, { useEffect, useState } from 'react';
+import {
+  Download,
+  ScanLine,
+  Package,
+  Truck,
+  Tag,
+  ShieldAlert,
+  ShieldCheck,
+  KeyRound,
+  ArrowUpRight,
+  Plus,
+} from 'lucide-react';
+import {
+  Bar,
+  BarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { API_BASE_URL } from '../../config/api';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DataTable } from '@/components/ui/data-table';
 
 export default function DashboardOverviewPage({
   activeMenu = 'dashboard',
@@ -55,14 +86,30 @@ export default function DashboardOverviewPage({
 
   const fetchSummaryAndProducts = async () => {
     try {
-      const [sumRes, prodRes] = await Promise.all([
+      const [sumRes, prodRes, stockRes] = await Promise.all([
         fetch(`${API_BASE_URL}/dashboard/summary`),
         fetch(`${API_BASE_URL}/products`),
+        fetch(`${API_BASE_URL}/inventory/stock`).catch(() => null),
       ]);
       const sumJson = await sumRes.json();
       const prodJson = await prodRes.json();
+      const stockJson = stockRes && stockRes.ok ? await stockRes.json().catch(() => null) : null;
+
+      const ledgerMap = new Map();
+      if (Array.isArray(stockJson?.data)) {
+        stockJson.data.forEach((row) => {
+          ledgerMap.set(row.sku, Number(row.current_stock ?? 0));
+        });
+      }
+
+      const mergedProducts = (prodJson.data || []).map((p) => ({
+        ...p,
+        current_stock: ledgerMap.has(p.sku) ? ledgerMap.get(p.sku) : Number(p.current_stock ?? 0),
+        min_stock: Number(p.min_stock ?? p.min_stock_threshold ?? p.min_stock_alert ?? 20),
+      }));
+
       setSummary(sumJson.data);
-      setProducts(prodJson.data || []);
+      setProducts(mergedProducts);
     } catch (err) {
       console.error('Gagal mengambil ringkasan dashboard:', err);
     } finally {
@@ -361,348 +408,466 @@ export default function DashboardOverviewPage({
   // MENU 1: DASHBOARD UTAMA (Tampilan Simpel, Bersih & Profesional)
   // ============================================================================
   if (activeMenu === 'dashboard') {
+    const rechartsData =
+      chartSeries.length > 0
+        ? chartSeries.map((d) => ({
+            name: d.label,
+            inbound: Number(d.inbound || 0),
+            outbound: Number(d.outbound || 0),
+            opname: Number(d.opname || 0),
+            total:
+              Number(d.inbound || 0) +
+              Number(d.outbound || 0) +
+              Number(d.opname || 0),
+          }))
+        : [
+            { name: 'Sen', inbound: 24, outbound: 12, opname: 8, total: 44 },
+            { name: 'Sel', inbound: 32, outbound: 18, opname: 14, total: 64 },
+            { name: 'Rab', inbound: 18, outbound: 15, opname: 10, total: 43 },
+            { name: 'Kam', inbound: 45, outbound: 22, opname: 16, total: 83 },
+            { name: 'Jum', inbound: 29, outbound: 20, opname: 12, total: 61 },
+            { name: 'Sab', inbound: 38, outbound: 26, opname: 15, total: 79 },
+            { name: 'Min', inbound: 15, outbound: 9, opname: 6, total: 30 },
+          ];
+
     return (
-      <div className="space-y-6">
-        {/* Compact Clean Header */}
+      <div className="space-y-4">
+        {/* Exact Shadcn Admin Dashboard Heading */}
         <div
           data-tour="dashboard-header"
-          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm"
+          className="mb-2 flex flex-wrap items-center justify-between gap-2"
         >
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-                Ringkasan Gudang
-              </h1>
-              <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Supabase Cloud Connected</span>
-              </span>
-              {mqttConnected && (
-                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-blue-50 text-blue-700 border border-blue-200/60">
-                  EMQX Active
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-slate-500 mt-1">
-              Pemantauan stok inventaris real-time, penerimaan barang, dan status portal gerbang RFID.
-            </p>
+            <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
           </div>
-          <div className="flex items-center space-x-2.5 shrink-0">
-            <button
+          <div className="flex items-center space-x-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => switchTab?.('rfid-opname')}
+            >
+              <ScanLine className="h-4 w-4" />
+              Opname Cepat
+            </Button>
+            <Button
+              type="button"
+              size="sm"
               onClick={handleDownloadCsvReport}
-              className="px-3.5 py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold shadow-sm transition inline-flex items-center space-x-1.5"
               title="Unduh Rekap Format CSV"
             >
-              <span>📥</span>
-              <span>Ekspor CSV</span>
-            </button>
-            <button
-              onClick={() => switchTab?.('rfid-opname')}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm shadow-blue-600/20 transition inline-flex items-center space-x-1.5"
+              <Download className="h-4 w-4" />
+              Download
+            </Button>
+          </div>
+        </div>
+
+        {/* Exact Shadcn Admin Dashboard Tabs */}
+        <Tabs defaultValue="overview" className="space-y-4">
+          <div className="w-full overflow-x-auto pb-1">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="low-stock">
+                Stok Kritis ({lowStockItems.length})
+              </TabsTrigger>
+              <TabsTrigger value="gate">Keamanan Gerbang</TabsTrigger>
+            </TabsList>
+          </div>
+
+          {/* ===== TAB 1: OVERVIEW (1-to-1 shadcn-admin layout) ===== */}
+          <TabsContent value="overview" className="space-y-4">
+            {/* 4-Column KPI Row */}
+            <div
+              data-tour="dashboard-kpi-cards"
+              className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
             >
-              <span>🔍</span>
-              <span>Opname Cepat</span>
-            </button>
-          </div>
-        </div>
-
-        {/* 5 Clean Metric Cards (MVP 2 Enhanced) */}
-        <div
-          data-tour="dashboard-kpi-cards"
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4"
-        >
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              <span>Total Stok Fisik</span>
-              <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                {kpis.totalSkus} SKU
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {kpis.totalPhysicalStock}
-              </span>
-              <span className="text-xs text-slate-400 font-medium">unit</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
-              <span className="text-emerald-500 font-bold">✓</span>
-              <span>Saldo terverifikasi dari ledger</span>
-            </p>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              <span>Penerimaan (GRN)</span>
-              <span className="text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                Terverifikasi
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {kpis.totalInbound ?? 0}
-              </span>
-              <span className="text-xs text-slate-400 font-medium">unit</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
-              <span className="text-emerald-500 font-bold">✓</span>
-              <span>Dokumen PO masuk selesai</span>
-            </p>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              <span>Tag RFID Terdata</span>
-              <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md font-bold text-[11px]">
-                920-923 MHz
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-slate-900 tracking-tight">
-                {kpis.activeRfidTags ?? 0}
-              </span>
-              <span className="text-xs text-slate-400 font-medium">chip</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
-              <span className="text-indigo-500 font-bold">✓</span>
-              <span>Semua tag ter-encode & aktif</span>
-            </p>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-slate-300 transition">
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              <span>Keamanan Gerbang</span>
-              <span
-                className={`px-2 py-0.5 rounded-md font-bold text-[11px] ${
-                  (kpis.gateAlarmsCount || 0) > 0
-                    ? 'text-rose-700 bg-rose-50'
-                    : 'text-emerald-700 bg-emerald-50'
-                }`}
-              >
-                {(kpis.gateAlarmsCount || 0) > 0 ? 'Alarm Aktif' : 'Portal Standby'}
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline space-x-2">
-              <span
-                className={`text-2xl font-extrabold tracking-tight ${
-                  (kpis.gateAlarmsCount || 0) > 0 ? 'text-rose-600' : 'text-emerald-600'
-                }`}
-              >
-                {(kpis.gateAlarmsCount || 0) > 0 ? 'WASPADA' : 'TERLINDUNGI'}
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
-              <span className={(kpis.gateAlarmsCount || 0) > 0 ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold'}>
-                {(kpis.gateAlarmsCount || 0) > 0 ? '🚨' : '✓'}
-              </span>
-              <span>{kpis.gateAlarmsCount ?? 0} alarm aktif di database</span>
-            </p>
-          </div>
-
-          {/* Card 5 (MVP 2 - Orang 4): Gate Pass Aktif */}
-          <div
-            onClick={() => switchTab?.('gate-security')}
-            className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm hover:border-blue-400 hover:shadow-md cursor-pointer transition group"
-          >
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-500 uppercase tracking-wider">
-              <span>Gate Pass Aktif</span>
-              <span className="text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md font-bold text-[11px] group-hover:bg-blue-600 group-hover:text-white transition">
-                MVP 2 ↗
-              </span>
-            </div>
-            <div className="mt-3 flex items-baseline space-x-2">
-              <span className="text-3xl font-extrabold text-blue-600 tracking-tight">
-                {kpis.activeGatePasses ?? 0}
-              </span>
-              <span className="text-xs text-slate-400 font-medium">izin</span>
-            </div>
-            <p className="text-[11px] text-slate-500 mt-2 flex items-center space-x-1">
-              <span className="text-blue-500 font-bold">🛡️</span>
-              <span>Siap verifikasi di pos gerbang</span>
-            </p>
-          </div>
-        </div>
-
-        {/* Banner Fitur Baru MVP 2: Gate Security & Pass Verification */}
-        <div
-          data-tour="dashboard-gate-banner"
-          className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 p-4 sm:p-5 rounded-2xl border border-slate-800 shadow-sm text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
-        >
-          <div className="flex items-center space-x-3.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-600/30 border border-blue-500/40 flex items-center justify-center text-xl shrink-0">
-              🛡️
-            </div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-extrabold tracking-wider uppercase text-blue-400">
-                  Fase 2: Outbound & Security Gate
-                </span>
-                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                  Aktif
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Pastikan setiap barang keluar memiliki <strong>Gate Pass resmi</strong> dengan status tag <code>AUTHORIZED_OUT</code> sebelum melintasi portal RFID.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => switchTab?.('gate-security')}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-600/30 transition shrink-0 flex items-center space-x-1.5"
-          >
-            <span>Buka Terminal Pos Satpam</span>
-            <span>→</span>
-          </button>
-        </div>
-
-        {/* Main Grid: Chart (65%) & Low Stock Alert (35%) */}
-        <div data-tour="dashboard-analytics-grid" className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Sisi Kiri: Grafik Tren Mutasi Stok Ramping */}
-          <div className="lg:col-span-2 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">
-                  Tren Pergerakan Stok
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Aktivitas masuk, keluar, dan opname ({chartPeriod === '7d' ? '7 Hari' : '30 Hari'} terakhir)
-                </p>
-              </div>
-              <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-200">
-                <button
-                  onClick={() => setChartPeriod('7d')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
-                    chartPeriod === '7d'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  7 Hari
-                </button>
-                <button
-                  onClick={() => setChartPeriod('30d')}
-                  className={`px-3 py-1 text-xs font-semibold rounded-lg transition ${
-                    chartPeriod === '30d'
-                      ? 'bg-white text-slate-900 shadow-sm'
-                      : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  30 Hari
-                </button>
-              </div>
-            </div>
-
-            <div className="h-64 flex items-end gap-3 sm:gap-4 pt-6 pb-2 px-3 border-b border-slate-100 bg-slate-50/40 rounded-xl">
-              {chartSeries.map((item, idx) => {
-                const inH = Math.round(((item.inbound || 0) / maxChartVal) * 180);
-                const outH = Math.round(((item.outbound || 0) / maxChartVal) * 180);
-                const opnH = Math.round(((item.opname || 0) / maxChartVal) * 180);
-                return (
-                  <div key={idx} className="flex-1 flex flex-col items-center group">
-                    <div className="w-full flex items-end justify-center gap-1 sm:gap-1.5 h-48">
-                      <div
-                        style={{ height: `${Math.max(inH, 8)}px` }}
-                        title={`Inbound: +${item.inbound}`}
-                        className="w-2.5 sm:w-3.5 bg-blue-600 hover:bg-blue-500 rounded-t-sm transition-all"
-                      />
-                      <div
-                        style={{ height: `${Math.max(outH, 8)}px` }}
-                        title={`Outbound: -${item.outbound}`}
-                        className="w-2.5 sm:w-3.5 bg-rose-500 hover:bg-rose-400 rounded-t-sm transition-all"
-                      />
-                      <div
-                        style={{ height: `${Math.max(opnH, 6)}px` }}
-                        title={`Audit Opname: ${item.opname}`}
-                        className="w-2.5 sm:w-3.5 bg-emerald-500 hover:bg-emerald-400 rounded-t-sm transition-all"
-                      />
-                    </div>
-                    <span className="mt-2 text-[11px] font-semibold text-slate-500">{item.label}</span>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Total Stok Fisik
+                  </CardTitle>
+                  <Package className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {kpis.totalPhysicalStock}
                   </div>
-                );
-              })}
+                  <p className="text-xs text-muted-foreground">
+                    {kpis.totalSkus} SKU terverifikasi di ledger
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Penerimaan (GRN)
+                  </CardTitle>
+                  <Truck className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    +{kpis.totalInbound ?? 0}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Unit masuk terverifikasi dari PO
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Tag RFID Aktif
+                  </CardTitle>
+                  <Tag className="h-4 w-4 text-muted-foreground" />
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    +{kpis.activeRfidTags ?? 0}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    UHF 920–923 MHz · {mqttConnected ? 'EMQX Live' : 'Standby'}
+                  </p>
+                </CardContent>
+              </Card>
+
+              <Card
+                onClick={() => switchTab?.('gate-security')}
+                className="cursor-pointer transition-colors hover:border-primary/50"
+              >
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                  <CardTitle className="text-sm font-medium">
+                    Gate Pass & Keamanan
+                  </CardTitle>
+                  {(kpis.gateAlarmsCount || 0) > 0 ? (
+                    <ShieldAlert className="h-4 w-4 text-destructive" />
+                  ) : (
+                    <KeyRound className="h-4 w-4 text-muted-foreground" />
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">
+                    {kpis.activeGatePasses ?? 0}{' '}
+                    <span className="text-xs font-medium text-muted-foreground">
+                      izin aktif
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {(kpis.gateAlarmsCount || 0) > 0
+                      ? `${kpis.gateAlarmsCount} alarm aktif · Cek Pos`
+                      : 'Portal aman · 0 alarm aktif'}
+                  </p>
+                </CardContent>
+              </Card>
             </div>
 
-            <div className="flex flex-wrap items-center justify-between gap-4 mt-4 text-xs text-slate-500">
-              <div className="flex items-center gap-4">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block"></span> Inbound (GRN)
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Outbound (POS)
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span> Opname RFID
-                </span>
-              </div>
-              <span className="font-mono text-[10px] text-slate-400">
-                Data real-time: v_product_stock_ledger
-              </span>
-            </div>
-          </div>
+            {/* 7-Column Bento: Overview BarChart (4 cols) + Recent Activity (3 cols) */}
+            <div
+              data-tour="dashboard-analytics-grid"
+              className="grid grid-cols-1 gap-4 lg:grid-cols-7"
+            >
+              <Card className="col-span-1 lg:col-span-4">
+                <CardHeader className="flex flex-row items-center justify-between space-y-0">
+                  <div>
+                    <CardTitle>Overview</CardTitle>
+                    <CardDescription>
+                      Total pergerakan stok ({chartPeriod === '7d' ? '7 hari' : '30 hari'} terakhir)
+                    </CardDescription>
+                  </div>
+                  <div className="inline-flex rounded-md bg-muted p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setChartPeriod('7d')}
+                      className={`rounded-sm px-2.5 py-1 font-medium transition ${
+                        chartPeriod === '7d'
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      7 Hari
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartPeriod('30d')}
+                      className={`rounded-sm px-2.5 py-1 font-medium transition ${
+                        chartPeriod === '30d'
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
+                    >
+                      30 Hari
+                    </button>
+                  </div>
+                </CardHeader>
+                <CardContent className="ps-2">
+                  <ResponsiveContainer width="100%" height={330}>
+                    <BarChart data={rechartsData}>
+                      <XAxis
+                        dataKey="name"
+                        stroke="#888888"
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke="#888888"
+                        fontSize={12}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <Tooltip
+                        cursor={{ fill: 'hsl(var(--muted) / 0.5)' }}
+                        contentStyle={{
+                          backgroundColor: 'hsl(var(--popover))',
+                          borderColor: 'hsl(var(--border))',
+                          borderRadius: '0.5rem',
+                          fontSize: '12px',
+                          color: 'hsl(var(--popover-foreground))',
+                        }}
+                      />
+                      <Bar
+                        dataKey="total"
+                        name="Total Mutasi"
+                        fill="currentColor"
+                        radius={[4, 4, 0, 0]}
+                        className="fill-primary"
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
 
-          {/* Sisi Kanan: Peringatan Stok Kritis Berbasis Progress Bar */}
-          <div className="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col justify-between">
-            <div>
-              <div className="flex items-center justify-between mb-4">
+              <Card className="col-span-1 lg:col-span-3 flex flex-col">
+                <CardHeader>
+                  <CardTitle>Aktivitas Terbaru</CardTitle>
+                  <CardDescription>
+                    {auditLogs.length > 0
+                      ? `${auditLogs.length} catatan audit & mutasi tercatat di sistem.`
+                      : 'Ringkasan stok kritis dan log operasional terbaru.'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex-1">
+                  <div className="space-y-6">
+                    {auditLogs.length > 0 ? (
+                      auditLogs.slice(0, 5).map((log) => {
+                        const actor = String(log.actor_username || 'SYS');
+                        const init = actor.slice(0, 2).toUpperCase();
+                        return (
+                          <div
+                            key={log.id}
+                            className="flex items-center gap-4"
+                          >
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-muted text-xs font-semibold">
+                              {init}
+                            </div>
+                            <div className="flex flex-1 flex-wrap items-center justify-between gap-2 min-w-0">
+                              <div className="space-y-1 min-w-0">
+                                <p className="text-sm font-medium leading-none truncate">
+                                  {actor}
+                                </p>
+                                <p className="text-xs text-muted-foreground truncate max-w-[210px]">
+                                  {log.details || log.action}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="text-[10px] font-mono shrink-0">
+                                {log.action}
+                              </Badge>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : lowStockItems.length > 0 ? (
+                      lowStockItems.slice(0, 5).map((item) => (
+                        <div
+                          key={item.id || item.sku}
+                          className="flex items-center gap-4"
+                        >
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-muted text-xs font-semibold">
+                            {String(item.sku || 'SK').slice(0, 2).toUpperCase()}
+                          </div>
+                          <div className="flex flex-1 items-center justify-between gap-2 min-w-0">
+                            <div className="space-y-1 min-w-0">
+                              <p className="text-sm font-medium leading-none truncate">
+                                {item.name}
+                              </p>
+                              <p className="text-xs text-muted-foreground font-mono">
+                                {item.sku} · {item.category}
+                              </p>
+                            </div>
+                            <div className="text-sm font-medium text-destructive shrink-0">
+                              {item.current_stock}/{item.min_stock || 20}
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="py-10 text-center text-sm text-muted-foreground">
+                        Belum ada aktivitas terbaru.
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* ===== TAB 2: ANALYTICS ===== */}
+          <TabsContent value="analytics" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Perbandingan Inbound, Outbound & Opname</CardTitle>
+                <CardDescription>
+                  Rincian volume unit masuk (GRN), keluar (POS/Outbound), dan audit opname RFID.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="ps-2">
+                <ResponsiveContainer width="100%" height={340}>
+                  <BarChart data={rechartsData}>
+                    <XAxis
+                      dataKey="name"
+                      stroke="#888888"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="#888888"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: 'hsl(var(--popover))',
+                        borderColor: 'hsl(var(--border))',
+                        borderRadius: '0.5rem',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Bar
+                      dataKey="inbound"
+                      name="Inbound (GRN)"
+                      fill="hsl(var(--chart-1))"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="outbound"
+                      name="Outbound (POS)"
+                      fill="hsl(var(--chart-2))"
+                      radius={[4, 4, 0, 0]}
+                    />
+                    <Bar
+                      dataKey="opname"
+                      name="Opname RFID"
+                      fill="hsl(var(--chart-3))"
+                      radius={[4, 4, 0, 0]}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ===== TAB 3: STOK KRITIS ===== */}
+          <TabsContent value="low-stock" className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                  <h3 className="font-bold text-slate-900 text-base">Stok Kritis</h3>
-                  <p className="text-xs text-slate-500">Item mendekati batas minimum aman</p>
+                  <CardTitle>Daftar Stok Kritis</CardTitle>
+                  <CardDescription>
+                    Produk dengan saldo di bawah atau sama dengan batas minimum aman.
+                  </CardDescription>
                 </div>
-                <button
-                  onClick={() => switchTab?.('stok')}
-                  className="text-xs text-blue-600 font-semibold hover:underline"
-                >
-                  Lihat Semua →
-                </button>
-              </div>
-
-              <div className="space-y-3">
+                <Button size="sm" onClick={() => openAddProductModal?.()}>
+                  <Plus className="h-4 w-4" />
+                  Tambah Barang
+                </Button>
+              </CardHeader>
+              <CardContent>
                 {lowStockItems.length === 0 ? (
-                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-700 font-medium">
-                    Semua stok barang aman di atas batas minimum.
+                  <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-6 text-center text-sm text-emerald-700 dark:text-emerald-400">
+                    Semua stok barang berada di atas batas minimum aman.
                   </div>
                 ) : (
-                  lowStockItems.slice(0, 4).map((item) => {
-                    const current = Number(item.current_stock);
-                    const minStock = Number(item.min_stock || 20);
-                    const percentage = Math.min(100, Math.round((current / minStock) * 100));
-                    return (
-                      <div
-                        key={item.id || item.sku}
-                        className="p-3 bg-slate-50/80 rounded-xl border border-slate-100 hover:border-slate-200 transition"
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <p className="text-xs font-bold text-slate-800 truncate mr-2">{item.name}</p>
-                          <span className="text-[11px] font-bold text-rose-600 bg-rose-50 border border-rose-200/60 px-2 py-0.5 rounded-md shrink-0">
-                            {current} / {minStock} unit
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all duration-500 ${
-                              percentage <= 75 ? 'bg-rose-500' : 'bg-amber-500'
-                            }`}
-                            style={{ width: `${percentage}%` }}
-                          />
-                        </div>
-                        <p className="text-[10px] text-slate-400 mt-1 font-mono">
-                          {item.sku} • {item.category}
-                        </p>
-                      </div>
-                    );
-                  })
+                  <div className="rounded-md border overflow-hidden">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b bg-muted/50 text-left text-xs font-medium text-muted-foreground">
+                          <th className="h-10 px-4">SKU</th>
+                          <th className="h-10 px-4">Nama Barang</th>
+                          <th className="h-10 px-4">Kategori</th>
+                          <th className="h-10 px-4 text-right">Saldo / Min</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {lowStockItems.map((item) => (
+                          <tr key={item.id || item.sku} className="hover:bg-muted/30">
+                            <td className="px-4 py-3 font-mono text-xs">{item.sku}</td>
+                            <td className="px-4 py-3 font-medium">{item.name}</td>
+                            <td className="px-4 py-3 text-muted-foreground">{item.category}</td>
+                            <td className="px-4 py-3 text-right">
+                              <Badge variant="destructive">
+                                {item.current_stock} / {item.min_stock || 20} unit
+                              </Badge>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 )}
-              </div>
-            </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-            <button
-              onClick={() => openAddProductModal?.()}
-              className="mt-4 w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-semibold py-2.5 rounded-xl text-xs border border-slate-200 transition-all flex items-center justify-center space-x-2 shadow-sm"
-            >
-              <span>➕</span>
-              <span>Tambah / Masuk Barang Baru</span>
-            </button>
-          </div>
-        </div>
+          {/* ===== TAB 4: GATE SECURITY ===== */}
+          <TabsContent value="gate" className="space-y-4">
+            <Card data-tour="dashboard-gate-banner">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <CardTitle>Fase 2: Outbound & Security Gate</CardTitle>
+                    <Badge variant="success">Aktif</Badge>
+                  </div>
+                  <CardDescription>
+                    Pastikan setiap barang keluar memiliki Gate Pass resmi dengan status tag{' '}
+                    <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs">
+                      AUTHORIZED_OUT
+                    </code>{' '}
+                    sebelum melintasi portal UHF RFID.
+                  </CardDescription>
+                </div>
+                <Button onClick={() => switchTab?.('gate-security')}>
+                  Buka Terminal Pos Satpam
+                  <ArrowUpRight className="h-4 w-4" />
+                </Button>
+              </CardHeader>
+              <CardContent className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs text-muted-foreground">Status Portal</p>
+                  <p className="mt-1 text-lg font-bold flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-emerald-500" />
+                    {(kpis.gateAlarmsCount || 0) > 0 ? 'WASPADA' : 'TERLINDUNGI'}
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs text-muted-foreground">Gate Pass Aktif</p>
+                  <p className="mt-1 text-lg font-bold">
+                    {kpis.activeGatePasses ?? 0} dokumen izin
+                  </p>
+                </div>
+                <div className="rounded-lg border p-4">
+                  <p className="text-xs text-muted-foreground">Broker EMQX Live</p>
+                  <p className="mt-1 text-lg font-bold">
+                    {mqttConnected ? 'Terhubung (WS 8083)' : 'Mode Simulasi'}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     );
   }
@@ -825,162 +990,215 @@ export default function DashboardOverviewPage({
           </div>
         </div>
 
-        {/* Tabel Daftar Pengguna (CRUD Lengkap) */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
-            <input
-              type="text"
-              value={userSearch}
-              onChange={(e) => setUserSearch(e.target.value)}
-              placeholder="Cari nama personel atau username..."
-              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm w-full sm:w-80 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        {/* Tabel Daftar Pengguna (TanStack DataTable) */}
+        <DataTable
+          data={users}
+          columns={[
+            {
+              accessorKey: 'id',
+              header: 'ID',
+              cell: ({ row }) => (
+                <span className="font-mono text-muted-foreground">#{row.original.id}</span>
+              ),
+            },
+            {
+              accessorKey: 'full_name',
+              header: 'Nama Lengkap',
+              cell: ({ row }) => {
+                const u = row.original;
+                const isSelf = u.username === currentUser?.username;
+                return (
+                  <span className="font-medium text-foreground">
+                    {u.full_name}
+                    {isSelf && (
+                      <Badge variant="default" className="ml-2 text-[10px]">
+                        Anda
+                      </Badge>
+                    )}
+                  </span>
+                );
+              },
+            },
+            {
+              accessorKey: 'username',
+              header: 'Username',
+              cell: ({ row }) => (
+                <span className="font-mono text-muted-foreground">
+                  @{row.original.username}
+                </span>
+              ),
+            },
+            {
+              accessorKey: 'role',
+              header: 'Role (RBAC)',
+              cell: ({ row }) => (
+                <Badge variant="secondary" className="font-mono text-[11px]">
+                  {row.original.role}
+                </Badge>
+              ),
+            },
+            {
+              id: 'status',
+              header: 'Status',
+              accessorFn: (row) => (row.is_active ? 'AKTIF' : 'NONAKTIF'),
+              cell: ({ row }) => (
+                <Badge variant={row.original.is_active ? 'success' : 'destructive'}>
+                  {row.original.is_active ? 'Aktif' : 'Nonaktif'}
+                </Badge>
+              ),
+            },
+            {
+              accessorKey: 'created_at',
+              header: 'Terdaftar Sejak',
+              cell: ({ row }) => (
+                <span className="font-mono text-muted-foreground whitespace-nowrap">
+                  {row.original.created_at
+                    ? new Date(row.original.created_at).toLocaleDateString('id-ID')
+                    : '-'}
+                </span>
+              ),
+            },
+            {
+              id: 'actions',
+              header: 'Aksi',
+              enableSorting: false,
+              enableHiding: false,
+              cell: ({ row }) => {
+                const u = row.original;
+                const isSelf = u.username === currentUser?.username;
+                return (
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openEditModal(u)}
+                      className="h-7 px-2 text-xs"
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleToggleUserStatus(u.id)}
+                      className="h-7 px-2 text-xs"
+                    >
+                      {u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
+                    </Button>
+                    {!isSelf && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeleteUser(u)}
+                        className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                      >
+                        Hapus
+                      </Button>
+                    )}
+                  </div>
+                );
+              },
+            },
+          ]}
+          searchPlaceholder="Cari nama personel atau username..."
+          dateField="created_at"
+          initialSorting={[{ id: 'created_at', desc: true }]}
+          filters={[
+            {
+              key: 'role',
+              label: 'Role',
+              options: [
+                { value: 'ADMIN', label: 'ADMIN' },
+                { value: 'SUPERVISOR', label: 'SUPERVISOR' },
+                { value: 'WAREHOUSE_STAFF', label: 'WAREHOUSE_STAFF' },
+                { value: 'SECURITY', label: 'SECURITY' },
+              ],
+            },
+            {
+              key: 'status',
+              label: 'Status',
+              getValue: (row) => (row.is_active ? 'AKTIF' : 'NONAKTIF'),
+              options: [
+                { value: 'AKTIF', label: 'Aktif' },
+                { value: 'NONAKTIF', label: 'Nonaktif' },
+              ],
+            },
+          ]}
+          emptyMessage="Tidak ada akun personel yang cocok."
+        />
+
+        {/* Tabel System Audit Logs (TanStack DataTable) */}
+        <Card>
+          <CardHeader>
+            <CardTitle>System Security & Activity Audit Logs</CardTitle>
+            <CardDescription>
+              Rekam jejak seluruh login/logout personel, perubahan akun RBAC, dan konfigurasi sistem (dilengkapi sorting & filter tanggal).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <DataTable
+              data={auditLogs}
+              columns={[
+                {
+                  accessorKey: 'created_at',
+                  header: 'Waktu / Tanggal',
+                  cell: ({ row }) => (
+                    <span className="font-mono text-muted-foreground whitespace-nowrap">
+                      {row.original.created_at
+                        ? new Date(row.original.created_at).toLocaleString('id-ID')
+                        : '-'}
+                    </span>
+                  ),
+                },
+                {
+                  accessorKey: 'actor_username',
+                  header: 'Personel & Role',
+                  cell: ({ row }) => (
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-medium">{row.original.actor_username}</span>
+                      <Badge variant="outline" className="text-[10px] font-mono">
+                        {row.original.actor_role}
+                      </Badge>
+                    </div>
+                  ),
+                },
+                {
+                  accessorKey: 'action',
+                  header: 'Aksi Sistem',
+                  cell: ({ row }) => (
+                    <span className="font-mono font-semibold">{row.original.action}</span>
+                  ),
+                },
+                {
+                  accessorKey: 'details',
+                  header: 'Detail Aktivitas',
+                  cell: ({ row }) => (
+                    <span className="text-muted-foreground">{row.original.details}</span>
+                  ),
+                },
+              ]}
+              searchPlaceholder="Cari personel, aksi, atau detail log..."
+              dateField="created_at"
+              initialSorting={[{ id: 'created_at', desc: true }]}
+              filters={[
+                {
+                  key: 'actor_role',
+                  label: 'Role',
+                  options: [
+                    { value: 'ADMIN', label: 'ADMIN' },
+                    { value: 'SUPERVISOR', label: 'SUPERVISOR' },
+                    { value: 'WAREHOUSE_STAFF', label: 'WAREHOUSE_STAFF' },
+                    { value: 'SECURITY', label: 'SECURITY' },
+                  ],
+                },
+              ]}
+              emptyMessage="Belum ada catatan audit log."
+              defaultPageSize={10}
             />
-            <select
-              value={userRoleFilter}
-              onChange={(e) => setUserRoleFilter(e.target.value)}
-              className="px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none"
-            >
-              <option value="ALL">Semua Role / Jabatan</option>
-              <option value="ADMIN">ADMIN (Full Access)</option>
-              <option value="SUPERVISOR">SUPERVISOR (Approval Opname)</option>
-              <option value="WAREHOUSE_STAFF">WAREHOUSE_STAFF (Operator Inbound/Rak)</option>
-              <option value="SECURITY">SECURITY / KASIR_POS (Gate & POS)</option>
-            </select>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="p-4">ID</th>
-                  <th className="p-4">Nama Lengkap</th>
-                  <th className="p-4">Username Login</th>
-                  <th className="p-4">Role / Jabatan (RBAC)</th>
-                  <th className="p-4">Status Akun</th>
-                  <th className="p-4">Terdaftar Sejak</th>
-                  <th className="p-4 text-right">Aksi Manajemen</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {filteredUsers.map((u) => {
-                  const isSelf = u.username === currentUser?.username;
-                  return (
-                    <tr key={u.id} className="hover:bg-slate-50">
-                      <td className="p-4 font-mono text-xs text-slate-400">#{u.id}</td>
-                      <td className="p-4 font-bold text-slate-900">
-                        {u.full_name}
-                        {isSelf && (
-                          <span className="ml-2 text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full">
-                            Anda
-                          </span>
-                        )}
-                      </td>
-                      <td className="p-4 font-mono text-blue-600 font-semibold">@{u.username}</td>
-                      <td className="p-4">
-                        <span className="bg-slate-100 text-slate-800 text-xs px-2.5 py-1 rounded-lg font-bold font-mono">
-                          {u.role}
-                        </span>
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className={`text-xs px-2.5 py-1 rounded-lg font-bold ${
-                            u.is_active
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-rose-50 text-rose-700 border border-rose-200'
-                          }`}
-                        >
-                          {u.is_active ? 'Aktif' : 'Nonaktif'}
-                        </span>
-                      </td>
-                      <td className="p-4 text-xs text-slate-400">
-                        {new Date(u.created_at).toLocaleDateString('id-ID')}
-                      </td>
-                      <td className="p-4 text-right space-x-2">
-                        <button
-                          onClick={() => openEditModal(u)}
-                          className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-semibold transition"
-                        >
-                          Edit / Password
-                        </button>
-                        <button
-                          onClick={() => handleToggleUserStatus(u.id)}
-                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition"
-                        >
-                          {u.is_active ? 'Nonaktifkan' : 'Aktifkan'}
-                        </button>
-                        {!isSelf && (
-                          <button
-                            onClick={() => handleDeleteUser(u)}
-                            className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-semibold transition"
-                          >
-                            Hapus
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Tabel System Audit Logs */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-            <div>
-              <h3 className="font-bold text-slate-900">
-                System Security & Activity Audit Logs
-              </h3>
-              <p className="text-xs text-slate-500">
-                Rekam jejak seluruh login/logout personel, perubahan akun RBAC, dan konfigurasi sistem
-              </p>
-            </div>
-            <select
-              value={auditRoleFilter}
-              onChange={(e) => {
-                setAuditRoleFilter(e.target.value);
-                fetchUsersAndLogs(e.target.value);
-              }}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold"
-            >
-              <option value="ALL">Semua Role</option>
-              <option value="ADMIN">ADMIN</option>
-              <option value="SUPERVISOR">SUPERVISOR</option>
-              <option value="WAREHOUSE_STAFF">WAREHOUSE_STAFF</option>
-              <option value="SECURITY">SECURITY / KASIR</option>
-            </select>
-          </div>
-          <div className="overflow-x-auto max-h-80 overflow-y-auto custom-scrollbar">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                  <th className="p-3">Waktu</th>
-                  <th className="p-3">Personel & Role</th>
-                  <th className="p-3">Aksi Sistem</th>
-                  <th className="p-3">Detail Aktivitas</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 text-slate-700">
-                {auditLogs.map((log) => (
-                  <tr key={log.id} className="hover:bg-slate-50">
-                    <td className="p-3 text-slate-400 whitespace-nowrap">
-                      {new Date(log.created_at).toLocaleTimeString('id-ID')}
-                    </td>
-                    <td className="p-3 font-semibold">
-                      {log.actor_username}{' '}
-                      <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded ml-1">
-                        {log.actor_role}
-                      </span>
-                    </td>
-                    <td className="p-3 font-mono font-bold text-slate-800">{log.action}</td>
-                    <td className="p-3 text-slate-600">{log.details}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
 
         {/* Modal Tambah Personel Baru */}
         {showAddUserModal && (

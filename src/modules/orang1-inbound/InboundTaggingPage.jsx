@@ -1,8 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { inboundRequest, newEpc, normalizeTag, productForm, receivedLines, selectedProductId, tagTypeDetailField } from './api';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Package, Plus, RefreshCw, Tag, Truck } from 'lucide-react';
+import { inboundRequest, newEpc, newSku, normalizeTag, productForm, receivedLines, selectedProductId, tagTypeDetailField } from './api';
+import { DataTable } from '@/components/ui/data-table';
+import { Button } from '@/components/ui/button';
 
-const inputClass = 'w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500';
-const buttonClass = 'px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed';
+const inputClass = 'flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring';
+const buttonClass = 'inline-flex items-center justify-center gap-1.5 rounded-md px-3.5 py-2 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 const typeOptions = ['STANDARD_LABEL', 'ON_METAL', 'HARD_TAG'];
 const tagStatuses = ['UNASSIGNED', 'ENCODED', 'IN_STOCK', 'RESERVED', 'AUTHORIZED_OUT', 'EXITED', 'DAMAGED'];
 const labels = { MENUNGGU_VERIFIKASI: 'Menunggu Verifikasi', SELESAI: 'Selesai', DIBATALKAN: 'Dibatalkan', MENUNGGU_TAGGING: 'Menunggu Tagging', SEDANG_TAGGING: 'Sedang Tagging', SELESAI_TAGGING: 'Tagging Selesai', STANDARD_LABEL: 'Label Biasa (UHF)', ON_METAL: 'On Metal', HARD_TAG: 'Hard Tag' };
@@ -78,6 +81,13 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
   const [localSearch, setLocalSearch] = useState(''), [filter, setFilter] = useState(''), [typeFilter, setTypeFilter] = useState('');
   const [modal, setModal] = useState(null), [form, setForm] = useState({}), [formError, setFormError] = useState('');
   const [busy, setBusy] = useState(false), [notice, setNotice] = useState(null);
+  const [customCategories, setCustomCategories] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('digiwms_custom_categories') || '[]');
+      return Array.isArray(saved) ? saved : [];
+    } catch { return []; }
+  });
+  const [addingCategory, setAddingCategory] = useState(false), [newCatInput, setNewCatInput] = useState('');
   const busyRef = useRef(false), fetchVersion = useRef(0), mounted = useRef(true);
   const notify = (message, type = 'success') => { setNotice({ message, type }); showNotification?.(message, type); };
   const fetchData = useCallback(async () => {
@@ -97,19 +107,28 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
   useEffect(() => {
     if (activeMenu !== 'stok') return;
     let current = true;
-    setStock({ ledger: null, racks: null });
+    setStock({ ledger: null, racks: null, rackLocations: null });
     Promise.allSettled([inboundRequest('/inventory/stock'), inboundRequest('/inventory/stock-by-rack')]).then(([ledger, racks]) => {
       if (!current) return;
       const available = new Map();
+      const rackLocations = new Map();
       if (racks.status === 'fulfilled' && Array.isArray(racks.value)) {
         for (const row of racks.value) {
           const key = String(row.product_id);
           available.set(key, (available.get(key) ?? 0) + Number(row.quantity));
+          if (row.rack_code) {
+            const set = rackLocations.get(key) ?? new Set();
+            set.add(row.rack_code);
+            rackLocations.set(key, set);
+          }
         }
       }
       setStock({
         ledger: ledger.status === 'fulfilled' && Array.isArray(ledger.value) ? new Map(ledger.value.map(row => [row.sku, row.current_stock])) : null,
         racks: racks.status === 'fulfilled' && Array.isArray(racks.value) ? available : null,
+        rackLocations: racks.status === 'fulfilled' && Array.isArray(racks.value)
+          ? new Map([...rackLocations.entries()].map(([k, set]) => [k, [...set].sort().join(', ')]))
+          : null,
       });
     });
     return () => { current = false; };
@@ -187,23 +206,100 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
   const kind = activeMenu === 'stok' ? 'product' : activeMenu === 'penerimaan' ? 'grn' : 'tag';
   const titles = { product: 'Inventaris Stok Barang Gudang', grn: 'Manajemen Penerimaan Barang (Inbound & GRN)', tag: 'Manajemen Tag RFID UHF & Encoding' };
   const descriptions = { product: 'Kelola master SKU dan lihat stok yang tercatat pada sistem gudang.', grn: 'Catat surat jalan supplier, verifikasi penerimaan, dan pantau status RFID.', tag: 'Mode simulasi: registrasi EPC 96-bit dan tautkan produk. Encoding chip fisik memerlukan reader dan konfirmasi perangkat.' };
-  const search = `${localSearch} ${searchQuery}`.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const PageIcon = kind === 'product' ? Package : kind === 'grn' ? Truck : Tag;
   const source = kind === 'product' ? products : kind === 'grn' ? grns : tags;
-  const filtered = source.filter(row => {
-    const haystack = (kind === 'product' ? `${row.sku} ${row.name}` : kind === 'grn' ? `${row.po_number} ${row.supplier_name}` : `${row.epc} ${row.sku} ${row.product_name}`).toLowerCase();
-    return search.every(term => haystack.includes(term)) && (!filter || (kind === 'product' ? row.category : row.status) === filter) && (!typeFilter || row.type === typeFilter);
-  });
-  const categories = [...new Set(products.map(row => row.category).filter(Boolean))].sort();
-  const filters = kind === 'product' ? categories : kind === 'grn' ? ['MENUNGGU_VERIFIKASI', 'SELESAI', 'DIBATALKAN'] : tagStatuses;
-  const tableHeaders = kind === 'product' ? ['SKU / Kode', 'Nama Barang', 'Kategori', 'Lokasi Default', 'Saldo Ledger', 'Tersedia di Rak', 'Minimum Stok', 'Harga Satuan', 'Aksi'] : kind === 'grn' ? ['No. PO / Ref', 'Supplier', 'Tanggal Masuk', 'Jumlah Unit', 'Status RFID', 'Status Penerimaan', 'Aksi'] : ['EPC Tag (Hex)', 'Barang / SKU', 'Tipe Tag', 'Status', 'Tanggal Registrasi', 'Aksi'];
-  const rowActions = row => <div className="flex flex-wrap justify-end gap-3 min-w-40">
-    <button type="button" disabled={busy} onClick={() => details(kind, row)} className="text-xs font-semibold text-blue-600 disabled:opacity-50">Detail</button>
-    {(kind === 'product' || (kind === 'grn' && row.status === 'MENUNGGU_VERIFIKASI' && row.has_sku_lines) || (kind === 'tag' && ['UNASSIGNED', 'ENCODED'].includes(row.status))) && <button type="button" disabled={busy} onClick={() => openForm(kind, row)} className="text-xs font-semibold text-blue-600 disabled:opacity-50">Edit</button>}
-    {kind === 'product' && <button type="button" disabled={busy} onClick={() => action(kind, row, 'delete')} className="text-xs font-semibold text-rose-600">Hapus</button>}
-    {kind === 'grn' && row.status === 'MENUNGGU_VERIFIKASI' && <>{row.has_sku_lines && <button type="button" disabled={busy} onClick={() => action(kind, row, 'verify')} className="text-xs font-semibold text-emerald-700">Verifikasi</button>}<button type="button" disabled={busy} onClick={() => action(kind, row, 'cancel')} className="text-xs font-semibold text-rose-600">Batalkan</button></>}
-    {kind === 'tag' && ['UNASSIGNED', 'ENCODED'].includes(row.status) && <button type="button" disabled={busy} onClick={() => action(kind, row, 'deactivate')} className="text-xs font-semibold text-rose-600">Tandai Rusak</button>}
-    {kind === 'tag' && row.status === 'ENCODED' && row.inbound_purpose && <button type="button" disabled={busy} onClick={() => action(kind, row, 'replace')} className="text-xs font-semibold text-blue-600">Ganti EPC</button>}
-  </div>;
+  const categories = useMemo(
+    () =>
+      [
+        ...new Set([
+          ...products.map((row) => row.category).filter(Boolean),
+          ...customCategories,
+        ]),
+      ].sort(),
+    [products, customCategories]
+  );
+  const addCustomCategory = () => {
+    const trimmed = newCatInput.trim();
+    if (!trimmed) return;
+    const next = [...new Set([...customCategories, trimmed])];
+    setCustomCategories(next);
+    try {
+      localStorage.setItem('digiwms_custom_categories', JSON.stringify(next));
+    } catch {
+      // ignore storage errors
+    }
+    change('category', trimmed);
+    setNewCatInput('');
+    setAddingCategory(false);
+  };
+  const rowActions = useCallback(row => <div className="flex flex-wrap justify-end gap-2.5 min-w-36">
+    <button type="button" disabled={busy} onClick={() => details(kind, row)} className="text-xs font-medium text-primary hover:underline disabled:opacity-50">Detail</button>
+    {(kind === 'product' || (kind === 'grn' && row.status === 'MENUNGGU_VERIFIKASI' && row.has_sku_lines) || (kind === 'tag' && ['UNASSIGNED', 'ENCODED'].includes(row.status))) && <button type="button" disabled={busy} onClick={() => openForm(kind, row)} className="text-xs font-medium text-primary hover:underline disabled:opacity-50">Edit</button>}
+    {kind === 'product' && <button type="button" disabled={busy} onClick={() => action(kind, row, 'delete')} className="text-xs font-medium text-destructive hover:underline">Hapus</button>}
+    {kind === 'grn' && row.status === 'MENUNGGU_VERIFIKASI' && <>{row.has_sku_lines && <button type="button" disabled={busy} onClick={() => action(kind, row, 'verify')} className="text-xs font-medium text-emerald-600 dark:text-emerald-400 hover:underline">Verifikasi</button>}<button type="button" disabled={busy} onClick={() => action(kind, row, 'cancel')} className="text-xs font-medium text-destructive hover:underline">Batalkan</button></>}
+    {kind === 'tag' && ['UNASSIGNED', 'ENCODED'].includes(row.status) && <button type="button" disabled={busy} onClick={() => action(kind, row, 'deactivate')} className="text-xs font-medium text-destructive hover:underline">Tandai Rusak</button>}
+    {kind === 'tag' && row.status === 'ENCODED' && row.inbound_purpose && <button type="button" disabled={busy} onClick={() => action(kind, row, 'replace')} className="text-xs font-medium text-primary hover:underline">Ganti EPC</button>}
+  </div>, [busy, kind]);
+
+  const tableColumns = useMemo(() => {
+    if (kind === 'product') {
+      return [
+        { accessorKey: 'sku', header: 'SKU / Kode', cell: ({ row }) => <span className="font-mono font-semibold text-foreground">{row.original.sku}</span> },
+        { accessorKey: 'name', header: 'Nama Barang', cell: ({ row }) => <span className="font-medium text-foreground">{row.original.name}</span> },
+        { accessorKey: 'category', header: 'Kategori' },
+        {
+          id: 'location_rack',
+          header: 'Lokasi / Rak',
+          accessorFn: row => row.default_location_code || stock.rackLocations?.get(String(row.id)) || '',
+          cell: ({ row }) => {
+            const actual = stock.rackLocations?.get(String(row.original.id));
+            return display(row.original.default_location_code || actual);
+          },
+        },
+        { id: 'ledger_stock', header: 'Saldo Ledger', accessorFn: row => Number(stock.ledger?.get(row.sku) ?? 0), cell: ({ row }) => <span className="font-semibold">{display(stock.ledger?.get(row.original.sku))}</span> },
+        { id: 'rack_stock', header: 'Tersedia di Rak', accessorFn: row => Number(stock.racks?.get(String(row.id)) ?? 0), cell: ({ row }) => display(stock.racks && (stock.racks.get(String(row.original.id)) ?? 0)) },
+        { id: 'min_stock', header: 'Minimum Stok', accessorFn: row => Number(row.min_stock_alert ?? row.min_stock_threshold ?? 0), cell: ({ row }) => display(row.original.min_stock_alert ?? row.original.min_stock_threshold) },
+        { id: 'price', header: 'Harga Satuan', accessorFn: row => Number(row.price ?? row.unit_price ?? 0), cell: ({ row }) => <span className="whitespace-nowrap">Rp {Number(row.original.price ?? row.original.unit_price ?? 0).toLocaleString('id-ID')}</span> },
+        { id: 'actions', header: 'Aksi', enableSorting: false, enableHiding: false, cell: ({ row }) => rowActions(row.original) },
+      ];
+    }
+    if (kind === 'grn') {
+      return [
+        { accessorKey: 'po_number', header: 'No. PO / Ref', cell: ({ row }) => <span className="font-mono font-semibold">{row.original.po_number}</span> },
+        { accessorKey: 'supplier_name', header: 'Supplier', cell: ({ row }) => <span className="font-medium">{row.original.supplier_name}</span> },
+        { accessorKey: 'receipt_date', header: 'Tanggal Masuk', cell: ({ row }) => <span className="whitespace-nowrap font-mono">{dateText(row.original.receipt_date)}</span> },
+        { accessorKey: 'total_qty', header: 'Jumlah Unit', cell: ({ row }) => `${row.original.total_qty} Unit` },
+        { accessorKey: 'rfid_tagging_status', header: 'Status RFID', cell: ({ row }) => <Badge value={row.original.rfid_tagging_status} /> },
+        { accessorKey: 'status', header: 'Status Penerimaan', cell: ({ row }) => <Badge value={row.original.status} /> },
+        { id: 'actions', header: 'Aksi', enableSorting: false, enableHiding: false, cell: ({ row }) => rowActions(row.original) },
+      ];
+    }
+    return [
+      { accessorKey: 'epc', header: 'EPC Tag (Hex)', cell: ({ row }) => <span className="font-mono font-semibold">{row.original.epc}</span> },
+      { accessorKey: 'product_name', header: 'Barang / SKU', cell: ({ row }) => <div><p className="font-medium">{display(row.original.product_name)}</p><span className="text-[11px] text-muted-foreground font-mono">{display(row.original.sku)}</span></div> },
+      { accessorKey: 'type', header: 'Tipe Tag', cell: ({ row }) => row.original.type ? display(row.original.type) : row.original.type_label },
+      { accessorKey: 'status', header: 'Status', cell: ({ row }) => <Badge value={row.original.status} /> },
+      { accessorKey: 'created_at', header: 'Tanggal Registrasi', cell: ({ row }) => <span className="whitespace-nowrap font-mono">{dateText(row.original.created_at)}</span> },
+      { id: 'actions', header: 'Aksi', enableSorting: false, enableHiding: false, cell: ({ row }) => rowActions(row.original) },
+    ];
+  }, [kind, stock, rowActions]);
+
+  const tableFilters = useMemo(() => {
+    if (kind === 'product') {
+      return [{ key: 'category', label: 'Kategori', options: categories.map(c => ({ value: c, label: c })) }];
+    }
+    if (kind === 'grn') {
+      return [
+        { key: 'status', label: 'Status', options: ['MENUNGGU_VERIFIKASI', 'SELESAI', 'DIBATALKAN'].map(v => ({ value: v, label: display(v) })) },
+        { key: 'rfid_tagging_status', label: 'Status RFID', options: ['MENUNGGU_TAGGING', 'SEDANG_TAGGING', 'SELESAI_TAGGING'].map(v => ({ value: v, label: display(v) })) },
+      ];
+    }
+    return [
+      { key: 'status', label: 'Status', options: tagStatuses.map(v => ({ value: v, label: display(v) })) },
+      { key: 'type', label: 'Tipe Tag', options: typeOptions.map(v => ({ value: v, label: display(v) })) },
+    ];
+  }, [kind, categories]);
+
   const productSelector = <Field label="Produk / SKU"><select aria-label="Produk / SKU" required className={inputClass} value={String(form.product_id ?? '')} onChange={e => change('product_id', e.target.value)}><option value="">Pilih produk</option>{products.map(row => <option key={row.id} value={String(row.id)}>{row.sku} — {row.name}</option>)}</select></Field>;
   const selectedReceipt = grns.find(row => String(row.id) === String(form.grn_id));
   const textField = (key, label, attributes = {}) => <Field label={label}><input className={inputClass} required value={form[key] ?? ''} onChange={event => change(key, event.target.value)} {...attributes} /></Field>;
@@ -211,29 +307,55 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
   const detailFields = modal?.kind === 'product' ? [['id', 'ID Produk'], ['sku', 'SKU'], ['name', 'Nama Barang'], ['category', 'Kategori'], ['price', 'Harga'], ['min_stock_alert', 'Minimum Stok'], ['current_stock', 'Stok Tercatat'], ['default_location_code', 'Lokasi Default']] : modal?.kind === 'grn' ? [['id', 'ID GRN'], ['po_number', 'Nomor PO'], ['supplier_name', 'Supplier'], ['receipt_date', 'Tanggal'], ['total_qty', 'Jumlah Unit'], ['status', 'Status'], ['rfid_tagging_status', 'Status RFID'], ['verified_at', 'Waktu Verifikasi']] : [['id', 'ID Tag'], ['epc', 'EPC'], [tagTypeDetailField(modal?.row), 'Tipe'], ['status', 'Status'], ['product_id', 'ID Produk'], ['sku', 'SKU'], ['product_name', 'Produk'], ['grn_id', 'ID GRN'], ['created_at', 'Tanggal Registrasi']];
 
   return <div className="space-y-6">
-    <div data-tour="inbound-header" className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-      <div><h2 className="text-xl font-bold text-slate-900">{titles[kind]}</h2><p className="text-xs text-slate-500 mt-1 max-w-2xl">{descriptions[kind]}</p>
-        {kind === 'product' && <p className="text-xs text-slate-500 mt-1">Tersedia di Rak menghitung item IN_STOCK. Unit RESERVED tetap tercakup dalam saldo ledger sampai ada mutasi keluar.</p>}</div>
-      <div className="flex flex-wrap gap-2">{kind === 'product' && <button disabled={busy || loading} onClick={() => openForm('tag')} className={`${buttonClass} bg-cyan-600 text-white`}>🏷️ Registrasi Tag</button>}<button disabled={busy || loading} onClick={() => openForm(kind)} className={`${buttonClass} bg-blue-600 hover:bg-blue-700 text-white shadow-md`}>{kind === 'product' ? '➕ Tambah SKU Barang' : kind === 'grn' ? '➕ Catat Penerimaan Baru' : '🏷️ Registrasi Tag Simulasi'}</button></div>
-    </div>
-    {notice && <div role="status" className={`p-4 rounded-xl text-sm ${notice.type === 'error' ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{notice.message}</div>}
-    {loadErrors.length > 0 && <div role="alert" className="bg-rose-50 text-rose-700 p-4 rounded-xl text-sm">{loadErrors.map(error => <p key={error}>{error}</p>)}<p>Data yang tampil mungkin belum mutakhir. Gunakan Muat Ulang.</p></div>}
-    {kind === 'tag' && <div className="bg-slate-900 text-slate-200 p-4 rounded-2xl text-xs flex flex-wrap gap-3"><span>UNASSIGNED → ENCODED (meja penerimaan)</span><span>→ IN_STOCK (putaway) → RESERVED → AUTHORIZED_OUT → EXITED</span><span>DAMAGED: EPC dan riwayat tetap tersimpan.</span></div>}
-    <div data-tour="inbound-table" className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" aria-busy={loading}>
-      <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between gap-3">
-        <input aria-label="Cari data Orang 1" value={localSearch} onChange={e => setLocalSearch(e.target.value)} placeholder={kind === 'product' ? 'Cari nama barang atau SKU...' : kind === 'grn' ? 'Cari nomor PO atau supplier...' : 'Cari EPC, SKU atau nama barang...'} className={`${inputClass} sm:max-w-xs`} />
-        <div className="flex flex-wrap gap-2"><select aria-label={kind === 'product' ? 'Filter kategori' : 'Filter status'} className={inputClass + ' !w-auto'} value={filter} onChange={e => setFilter(e.target.value)}><option value="">{kind === 'product' ? 'Semua Kategori' : 'Semua Status'}</option>{filters.map(value => <option key={value} value={value}>{display(value)}</option>)}</select>
-          {kind === 'tag' && <select aria-label="Filter tipe tag" className={inputClass + ' !w-auto'} value={typeFilter} onChange={e => setTypeFilter(e.target.value)}><option value="">Semua Tipe</option>{typeOptions.map(type => <option key={type} value={type}>{display(type)}</option>)}</select>}
-          <button disabled={loading || busy} onClick={fetchData} className={`${buttonClass} bg-slate-100 text-slate-700`}>Muat Ulang</button>
+    <div data-tour="inbound-header" className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+          <PageIcon className="h-4 w-4" />
+        </div>
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">{titles[kind]}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5 max-w-2xl">{descriptions[kind]}</p>
+          {kind === 'product' && <p className="text-xs text-muted-foreground mt-1">Tersedia di Rak menghitung item IN_STOCK. Unit RESERVED tetap tercakup dalam saldo ledger sampai ada mutasi keluar.</p>}
         </div>
       </div>
-      <div className="overflow-x-auto"><table className="w-full text-left border-collapse text-sm"><thead><tr className="bg-slate-50 text-slate-600 border-b border-slate-200">{tableHeaders.map(header => <th key={header} className="p-4 whitespace-nowrap">{header}</th>)}</tr></thead>
-        <tbody className="divide-y divide-slate-100 text-slate-700">
-          {loading ? <tr><td className="p-8 text-center" colSpan={tableHeaders.length}>Memuat data dari backend...</td></tr> : filtered.length === 0 ? <tr><td className="p-8 text-center text-slate-500" colSpan={tableHeaders.length}>{loadErrors.length ? 'Data belum dapat ditampilkan.' : 'Belum ada data yang sesuai.'}</td></tr> : filtered.map(row => <tr key={row.id} className="hover:bg-slate-50">
-            {kind === 'product' ? <><td className="p-4 font-mono font-bold text-blue-600">{row.sku}</td><td className="p-4 font-semibold text-slate-900">{row.name}</td><td className="p-4">{row.category}</td><td className="p-4">{display(row.default_location_code)}</td><td className="p-4 font-bold">{display(stock.ledger?.get(row.sku))}</td><td className="p-4">{display(stock.racks && (stock.racks.get(String(row.id)) ?? 0))}</td><td className="p-4">{display(row.min_stock_alert ?? row.min_stock_threshold)}</td><td className="p-4 whitespace-nowrap">Rp {Number(row.price ?? row.unit_price ?? 0).toLocaleString('id-ID')}</td></> : kind === 'grn' ? <><td className="p-4 font-mono font-bold text-blue-600">{row.po_number}</td><td className="p-4">{row.supplier_name}</td><td className="p-4 whitespace-nowrap">{dateText(row.receipt_date)}</td><td className="p-4">{row.total_qty} Unit</td><td className="p-4"><Badge value={row.rfid_tagging_status} /></td><td className="p-4"><Badge value={row.status} /></td></> : <><td className="p-4 font-mono font-bold text-cyan-700">{row.epc}</td><td className="p-4"><p className="font-semibold">{display(row.product_name)}</p><span className="text-xs text-slate-400 font-mono">{display(row.sku)}</span></td><td className="p-4">{row.type ? display(row.type) : row.type_label}</td><td className="p-4"><Badge value={row.status} /></td><td className="p-4">{dateText(row.created_at)}</td></>}
-            <td className="p-4">{rowActions(row)}</td>
-          </tr>)}
-        </tbody></table></div>
+      <div className="flex flex-wrap gap-2">
+        {kind === 'product' && (
+          <Button type="button" variant="outline" size="sm" disabled={busy || loading} onClick={() => openForm('tag')}>
+            <Tag className="h-4 w-4" />
+            Registrasi Tag
+          </Button>
+        )}
+        <Button type="button" size="sm" disabled={busy || loading} onClick={() => openForm(kind)}>
+          {kind === 'tag' ? <Tag className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {kind === 'product' ? 'Tambah SKU Barang' : kind === 'grn' ? 'Catat Penerimaan Baru' : 'Registrasi Tag Simulasi'}
+        </Button>
+      </div>
+    </div>
+    {notice && <div role="status" className={`p-3.5 rounded-lg border text-xs font-medium ${notice.type === 'error' ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'}`}>{notice.message}</div>}
+    {loadErrors.length > 0 && <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 text-destructive p-3.5 text-xs">{loadErrors.map(error => <p key={error}>{error}</p>)}<p className="mt-1">Data yang tampil mungkin belum mutakhir. Gunakan Muat Ulang.</p></div>}
+    {kind === 'tag' && <div className="rounded-lg border bg-muted/40 text-muted-foreground p-3.5 text-xs flex flex-wrap gap-3"><span className="font-mono">UNASSIGNED → ENCODED (meja penerimaan)</span><span className="font-mono">→ IN_STOCK (putaway) → RESERVED → AUTHORIZED_OUT → EXITED</span><span>DAMAGED: EPC dan riwayat tetap tersimpan.</span></div>}
+    <div data-tour="inbound-table" aria-busy={loading}>
+      {loading ? (
+        <div className="rounded-md border bg-card p-10 text-center text-sm text-muted-foreground">Memuat data dari backend...</div>
+      ) : (
+        <DataTable
+          key={kind}
+          data={source}
+          columns={tableColumns}
+          externalSearch={searchQuery}
+          searchPlaceholder={kind === 'product' ? 'Cari SKU atau nama barang...' : kind === 'grn' ? 'Cari No. PO atau supplier...' : 'Cari EPC, SKU, atau barang...'}
+          dateField={kind === 'grn' ? 'receipt_date' : kind === 'tag' ? 'created_at' : null}
+          initialSorting={kind === 'grn' ? [{ id: 'receipt_date', desc: true }] : kind === 'tag' ? [{ id: 'created_at', desc: true }] : [{ id: 'sku', desc: false }]}
+          filters={tableFilters}
+          emptyMessage={loadErrors.length ? 'Data belum dapat ditampilkan.' : 'Belum ada data yang sesuai.'}
+          toolbarActions={
+            <Button type="button" variant="outline" size="sm" disabled={loading || busy} onClick={fetchData} className="h-8 gap-1.5 text-xs">
+              <RefreshCw className="h-3.5 w-3.5" />
+              Muat Ulang
+            </Button>
+          }
+        />
+      )}
     </div>
     {modal && <Modal title={modalTitle} close={close} busy={busy}>
       {modal.action === 'detail' ? <><dl className="space-y-3">{detailFields.map(([key, label]) => <div key={key} className="grid grid-cols-3 gap-3 text-sm"><dt className="text-slate-500">{label}</dt><dd className="col-span-2 break-words font-medium">{display(modal.row[key])}</dd></div>)}</dl>
@@ -241,8 +363,32 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
         {Array.isArray(modal.row.audit_history) && <div className="mt-6 border-t pt-4"><h4 className="font-semibold text-sm mb-3">Riwayat Perubahan</h4>{modal.row.audit_history.length ? <ul className="space-y-3 text-xs text-slate-600">{modal.row.audit_history.map((entry, index) => <li className="break-words" key={entry.id ?? index}>{entry.action} · {display(entry.created_at)}{entry.actor_id && <p>Petugas {entry.actor_id}</p>}{entry.reason && <p className="mt-1">Alasan: {entry.reason}</p>}</li>)}</ul> : <p className="text-xs text-slate-500">Belum ada riwayat perubahan.</p>}</div>}
       </> : <form onSubmit={submit} className="space-y-4"><fieldset disabled={busy} className="space-y-4">
         {modal.action === 'form' ? modal.kind === 'product' ? <>
-          {textField('sku', 'SKU / Kode Barang', { maxLength: 50 })}{textField('name', 'Nama Barang', { maxLength: 150 })}
-          <Field label="Kategori"><input required list="inbound-categories" maxLength={100} className={inputClass} value={form.category} onChange={e => change('category', e.target.value)} /><datalist id="inbound-categories">{categories.map(category => <option key={category} value={category} />)}</datalist></Field>
+          <Field label="SKU / Kode Barang">
+            <div className="flex gap-2">
+              <input className={inputClass + ' font-mono min-w-0'} required maxLength={50} placeholder="SKU-AKS-1234" value={form.sku ?? ''} onChange={event => change('sku', event.target.value.toUpperCase())} />
+              <button type="button" onClick={() => change('sku', newSku(form.category, form.name))} className={`${buttonClass} bg-slate-200 hover:bg-slate-300 text-slate-800 whitespace-nowrap`}>Generate</button>
+            </div>
+          </Field>
+          {textField('name', 'Nama Barang', { maxLength: 150 })}
+          <div className="block text-sm text-slate-600">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold">Kategori</span>
+              <button type="button" onClick={() => setAddingCategory(prev => !prev)} className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                {addingCategory ? 'Batal' : '+ Tambah Kategori Baru'}
+              </button>
+            </div>
+            {addingCategory ? (
+              <div className="flex gap-2">
+                <input type="text" maxLength={100} placeholder="Ketik nama kategori baru..." className={inputClass + ' min-w-0'} value={newCatInput} onChange={e => setNewCatInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomCategory(); } }} autoFocus />
+                <button type="button" onClick={addCustomCategory} className={`${buttonClass} bg-blue-600 text-white whitespace-nowrap`}>Simpan</button>
+              </div>
+            ) : (
+              <>
+                <input required list="inbound-categories" maxLength={100} placeholder="Pilih atau ketik kategori..." className={inputClass} value={form.category} onChange={e => change('category', e.target.value)} />
+                <datalist id="inbound-categories">{categories.map(category => <option key={category} value={category} />)}</datalist>
+              </>
+            )}
+          </div>
           <div className="grid grid-cols-2 gap-4">{textField('price', 'Harga Satuan (Rp)', { type: 'number', min: 0, max: 9999999999.99, step: '0.01' })}{textField('min_stock_alert', 'Minimum Stok', { type: 'number', min: 0, max: 2147483647, step: 1 })}</div>
           {'default_location_code' in form && textField('default_location_code', 'Lokasi Default (opsional)', { required: false, maxLength: 100 })}
         </> : modal.kind === 'grn' ? <>

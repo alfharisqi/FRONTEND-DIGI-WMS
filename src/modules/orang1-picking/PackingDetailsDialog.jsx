@@ -12,7 +12,7 @@ const checks = [
 const button = 'inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-50';
 const primary = `${button} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 const date = value => value ? new Date(value).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Belum tersedia';
-const pickingLabels = { SIAP_PACKING: 'Siap Packing', SEDANG_DIAMBIL: 'Sedang Diambil', MENUNGGU_PICKING: 'Menunggu Picking' };
+const pickingLabels = { DIKIRIM: 'Dikirim / Kurir', SIAP_PACKING: 'Siap Packing', SEDANG_DIAMBIL: 'Sedang Diambil', MENUNGGU_PICKING: 'Menunggu Picking' };
 
 function OrderItems({ order }) {
   return (
