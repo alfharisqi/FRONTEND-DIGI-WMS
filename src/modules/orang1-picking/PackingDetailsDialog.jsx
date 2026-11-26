@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ClipboardCheck, PackageCheck } from 'lucide-react';
 import { pickingRequest } from './api';
+import { CancellationAudit } from './CancellationDialog';
 
 const checks = [
   ['quantity_checked', 'Jumlah fisik barang sudah sesuai dengan pesanan.'],
@@ -12,7 +13,7 @@ const checks = [
 const button = 'inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 disabled:opacity-50';
 const primary = `${button} border-blue-600 bg-blue-600 text-white hover:bg-blue-700`;
 const date = value => value ? new Date(value).toLocaleString('id-ID', { dateStyle: 'medium', timeStyle: 'short' }) : 'Belum tersedia';
-const pickingLabels = { DIKIRIM: 'Dikirim / Kurir', SIAP_PACKING: 'Siap Packing', SEDANG_DIAMBIL: 'Sedang Diambil', MENUNGGU_PICKING: 'Menunggu Picking' };
+const pickingLabels = { DIKIRIM: 'Dikirim / Kurir', DIBATALKAN: 'Dibatalkan', SIAP_PACKING: 'Siap Packing', SEDANG_DIAMBIL: 'Sedang Diambil', MENUNGGU_PICKING: 'Menunggu Picking' };
 
 function OrderItems({ order }) {
   return (
@@ -88,9 +89,10 @@ export default function PackingDetailsDialog({ orderId, orderNumber, mode, close
   }, [load]);
 
   const completed = view?.status === 'SELESAI_PACKING';
+  const cancelled = view?.order.status === 'DIBATALKAN';
   const dirty = Boolean(view && checks.some(([key]) => draft[key] !== view.checklist[key]));
   const done = draft ? checks.filter(([key]) => draft[key]).length : 0;
-  const canEdit = Boolean(view?.picking_complete && !completed && !loading && !busy);
+  const canEdit = Boolean(view?.picking_complete && !completed && !cancelled && !loading && !busy);
   const canComplete = canEdit && !dirty && done === checks.length;
 
   async function submit(finalize) {
@@ -139,13 +141,14 @@ export default function PackingDetailsDialog({ orderId, orderNumber, mode, close
           <>
             <dl className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 text-sm sm:grid-cols-3">
               <div><dt className="text-slate-600">Picking</dt><dd className="font-semibold">{pickingLabels[view.order.status]}</dd></div>
-              <div><dt className="text-slate-600">Packing</dt><dd className="font-semibold">{completed ? 'Packing Selesai' : view.picking_complete ? 'Menunggu Packing' : 'Belum siap packing'}</dd></div>
+              {!cancelled && <div><dt className="text-slate-600">Packing</dt><dd className="font-semibold">{completed ? 'Packing Selesai' : view.picking_complete ? 'Menunggu Packing' : 'Belum siap packing'}</dd></div>}
               <div><dt className="text-slate-600">Progres Picking</dt><dd className="font-semibold">{view.order.picked_qty}/{view.order.requested_qty} unit</dd></div>
               <div><dt className="text-slate-600">Dibuat</dt><dd>{date(view.order.created_at)}</dd></div>
               {completed && <div className="col-span-2"><dt className="text-slate-600">Packing selesai</dt><dd>{date(view.completed_at)} · {view.completed_by_name || view.completed_by || 'Petugas belum tercatat'}</dd></div>}
             </dl>
+            {cancelled && <CancellationAudit audit={view.order.cancellation} />}
             <OrderItems order={view.order} />
-            {isPacking && (
+            {isPacking && !cancelled && (
               <section className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <h3 className="flex items-center gap-2 font-semibold"><ClipboardCheck size={18} /> Checklist Packing</h3>

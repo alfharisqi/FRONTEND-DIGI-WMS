@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 
-test('Picking UI handles shortages, partial batch, and Packing using the EPC checklist with mocked APIs', {
+test('Picking, Packing, cancellation and Outbound sources work through the UI with mocked APIs', {
   skip: !process.env.PLAYWRIGHT_MODULE || !process.env.PICKING_TEST_CHROME,
   timeout: 45_000,
 }, async () => {
@@ -37,7 +37,15 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
     const monitor = { id: '18b635db-0ec3-41b1-a1ec-e15da1438ce2', sku: 'MON-1', name: 'Monitor' };
     const other = { id: '07ef2112-9dba-4b41-a627-c17c0ebbc18a', sku: 'MON-2', name: 'Monitor Lain' };
     const orderId = '95a22d68-d0fe-4ee7-a83d-f32895f89810';
+    const cancellationId = 'c390e19c-f8ea-4d34-90b6b1d673de';
+    const cancellationNumber = 'ORD-UI-CANCEL';
+    const partialId = 'cf8da67c-b48a-49d1-97ba-e8fa9582a41f';
+    const partialNumber = 'ORD-UI-PARTIAL';
+    const partialScanId = '762c4648-b76c-4d95-b793-13d248919237';
     const makeEpc = index => String(index).padStart(24, '0');
+    const saleId = '4401793d-0779-4dfa-9ad7-22f4d1d98efc';
+    const outboundId = '5ad5142b-f70c-4826-afc0-8932ab6335ce';
+    const shipmentCalls = [];
     let stock = [1, 2, 3].map(makeEpc);
     const scans = [];
     const attempts = [];
@@ -64,6 +72,23 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
       };
     };
     const packing = () => ({ order: snapshot(), status: packingStatus, revision, checklist, picking_complete: scans.length === 5 });
+    let showCancellationOrder = false;
+    let canCancel = false;
+    let audit = null;
+    let cancellations = 0;
+    const cancellationOrder = () => ({
+      id: cancellationId, order_number: cancellationNumber, status: audit ? 'DIBATALKAN' : 'MENUNGGU_PICKING',
+      can_cancel: canCancel && !audit, cancellation: audit, requested_qty: 1, picked_qty: 0,
+      lines: [{ product_id: other.id, sku: other.sku, product_name: other.name, requested_qty: 1, picked_qty: 0, scans: [], locations: [] }],
+    });
+    let partialAudit = null;
+    const partialScan = { id: partialScanId, epc: makeEpc(15), location_code: 'C2', location_name: 'Rak Uji C2' };
+    const partialOrder = () => ({
+      id: partialId, order_number: partialNumber, status: partialAudit ? 'DIBATALKAN' : 'SEDANG_DIAMBIL',
+      can_cancel: canCancel && !partialAudit, cancellation: partialAudit, requested_qty: 3, picked_qty: partialAudit ? 0 : 1,
+      lines: [{ product_id: other.id, sku: other.sku, product_name: other.name, requested_qty: 3,
+        picked_qty: partialAudit ? 0 : 1, scans: [{ ...partialScan, active: !partialAudit }], locations: [] }],
+    });
     let creates = 0;
     await context.route('**/*', async route => {
       const url = new URL(route.request().url());
@@ -77,17 +102,55 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
       if (method === 'OPTIONS') return send(null);
       if (url.pathname === '/api/auth/login') return send({ user: { role: 'ADMIN', username: 'tester', full_name: 'Test' }, token: 'ui-test-token' });
       if (url.pathname === '/api/products') return send([monitor, other]);
+      if (url.pathname === '/api/locations' || url.pathname === '/api/inventory/ledger') return send([]);
+      if (url.pathname === '/api/tags') return send([{ epc: makeEpc(13), status: 'IN_STOCK' }]);
+      if (url.pathname === '/api/outbound/picking-orders') {
+        assert.equal(url.searchParams.get('for_handoff'), '1');
+        return send([
+          { id: orderId, source_type: 'PICKING_ORANG1', status: 'DIKIRIM', order_number: 'ORD-SIAP', items: [{ epc: makeEpc(10) }] },
+          { id: cancellationId, source_type: 'PICKING_ORANG1', status: 'DIBATALKAN', order_number: 'ORD-BATAL', items: [{ epc: makeEpc(11) }] },
+          { id: outboundId, source_type: 'OUTBOUND_PICKING', status: 'SIAP_PACKING', order_number: 'ORD-OUTBOUND', items: [{ epc: makeEpc(12) }] },
+        ]);
+      }
+      if (url.pathname === '/api/outbound/pos-orders') {
+        assert.equal(route.request().headers().authorization, 'Bearer ui-test-token');
+        return send([{ id: saleId, invoice_or_resi: 'POS-123', epcs: [makeEpc(14)] }]);
+      }
+      if (url.pathname === '/api/outbound/shipments') {
+        if (method === 'GET') return send([]);
+        const body = route.request().postDataJSON();
+        shipmentCalls.push(body);
+        if (body.source.type === 'PICKING_ORANG1') {
+          return send(null, 409, { message: 'Order sumber sudah berubah.', code: 'SHIPMENT_SOURCE_CONFLICT' });
+        }
+        return send({});
+      }
       if (url.pathname === '/api/picking/availability') {
         const productId = url.searchParams.get('product_id');
         return send({ product_id: productId, available_qty: productId === monitor.id ? stock.length : 0 });
       }
       if (url.pathname === '/api/picking/orders') {
-        if (method === 'GET') return send([snapshot()]);
+        if (method === 'GET') return send(showCancellationOrder ? [snapshot(), cancellationOrder(), partialOrder()] : [snapshot()]);
         creates++;
         stock.pop();
         return send(null, 409, { message: 'Stok berubah sejak terakhir diperiksa.' });
       }
       if (url.pathname.endsWith('/available-epcs')) return send({ order_id: orderId, lines: snapshot(true).lines });
+      if (url.pathname.endsWith(`/${cancellationId}/cancel`)) {
+        cancellations++;
+        const body = route.request().postDataJSON();
+        assert.deepEqual(body, { reason: 'LAINNYA', notes: 'Order ganda' });
+        audit = { ...body, actor_name: 'Petugas Uji', cancelled_at: '2026-11-25T10:00:00Z' };
+        return send({ id: cancellationId, status: 'DIBATALKAN', can_cancel: false, cancellation: audit });
+      }
+      if (url.pathname.endsWith(`/${partialId}/cancel`)) {
+        const body = route.request().postDataJSON();
+        assert.deepEqual(body, { reason: 'STOK_TIDAK_MENCUKUPI', notes: '', physical_return_confirmed: true,
+          return_scan_ids: [partialScanId] });
+        partialAudit = { ...body, actor_name: 'Petugas Uji', cancelled_at: '2026-11-25T10:00:00Z',
+          released_units: [{ ...partialScan, scan_id: partialScanId }] };
+        return send({ id: partialId, status: 'DIBATALKAN', can_cancel: false, cancellation: partialAudit });
+      }
       if (url.pathname === '/api/picking/scan') {
         const { epc } = route.request().postDataJSON();
         attempts.push(epc);
@@ -112,6 +175,12 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
         assert.ok(Object.values(checklist).every(Boolean));
         packingStatus = 'SELESAI_PACKING';
         return send(packing());
+      }
+      if (url.pathname.endsWith(`/${cancellationId}/packing`)) {
+        return send({ order: cancellationOrder(), status: 'MENUNGGU_PACKING', revision: 0, checklist, picking_complete: false });
+      }
+      if (url.pathname.endsWith(`/${partialId}/packing`)) {
+        return send({ order: partialOrder(), status: 'MENUNGGU_PACKING', revision: 0, checklist, picking_complete: false });
       }
       if (url.pathname.endsWith('/packing')) return send(packing());
       return send(null);
@@ -203,6 +272,91 @@ test('Picking UI handles shortages, partial batch, and Packing using the EPC che
     const shipped = page.getByRole('region', { name: 'Dikirim / Kurir' }).getByRole('article', { name: 'ORD-UI-TEST' });
     await shipped.getByText('Diserahkan ke Kurir', { exact: true }).waitFor();
     assert.equal(await shipped.getByRole('button', { name: /Picking|Packing/ }).count(), 0);
+
+    showCancellationOrder = true;
+    const reload = page.getByRole('button', { name: 'Muat Ulang', exact: true });
+    await reload.click();
+    const waiting = page.getByRole('region', { name: 'Menunggu Picking', exact: true }).getByRole('article', { name: cancellationNumber });
+    const partial = page.getByRole('region', { name: 'Sedang Diambil', exact: true }).getByRole('article', { name: partialNumber });
+    await waiting.waitFor();
+    assert.equal(await waiting.getByRole('button', { name: 'Batalkan Pesanan' }).count(), 0);
+    assert.equal(await partial.getByRole('button', { name: 'Batalkan Pesanan' }).count(), 0);
+    canCancel = true;
+    await reload.click();
+    await waiting.getByRole('button', { name: 'Batalkan Pesanan' }).click();
+    await dialog.getByText('Konfirmasi Pembatalan Picking', { exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('checkbox').count(), 0);
+    const confirm = dialog.getByRole('button', { name: 'Konfirmasi Pembatalan' });
+    assert.ok(await confirm.isDisabled());
+    await dialog.getByLabel('Alasan pembatalan').selectOption('LAINNYA');
+    assert.ok(await confirm.isDisabled());
+    await dialog.getByLabel('Keterangan tambahan').fill(' Order ganda ');
+    assert.ok(await confirm.isEnabled());
+    await dialog.locator('form').evaluate(form => { form.requestSubmit(); form.requestSubmit(); });
+
+    const history = page.getByRole('region', { name: 'Riwayat pesanan dibatalkan' });
+    const cancelled = history.getByRole('article', { name: cancellationNumber });
+    await cancelled.getByText('Petugas Uji', { exact: true }).waitFor();
+    assert.equal(cancellations, 1);
+    assert.equal(await cancelled.getByRole('button').count(), 1);
+    await cancelled.getByRole('button', { name: 'Detail' }).click();
+    await dialog.getByText('Order ganda', { exact: true }).waitFor();
+    assert.equal(await dialog.getByRole('button', { name: /Packing|Picking/ }).count(), 0);
+    await dialog.getByRole('button', { name: 'Tutup' }).click();
+
+    await page.getByRole('combobox', { name: 'Filter status picking' }).selectOption('');
+    await partial.getByRole('button', { name: 'Batalkan Pesanan' }).click();
+    await dialog.getByText(partialScan.epc, { exact: true }).waitFor();
+    await dialog.getByText('C2 · Rak Uji C2', { exact: true }).waitFor();
+    await dialog.getByLabel('Alasan pembatalan').selectOption('STOK_TIDAK_MENCUKUPI');
+    assert.ok(await confirm.isDisabled());
+    await dialog.getByRole('checkbox', { name: /mengembalikan seluruh barang/ }).check();
+    await confirm.click();
+    const partialHistory = history.getByRole('article', { name: partialNumber });
+    await partialHistory.getByText(partialScan.epc, { exact: true }).waitFor();
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.reload();
+    await navigate();
+    await shipped.getByText('Diserahkan ke Kurir', { exact: true }).waitFor();
+    assert.equal(await waiting.count(), 0);
+    await page.getByRole('combobox', { name: 'Filter status picking' }).selectOption('DIBATALKAN');
+    await cancelled.getByText('Order ganda', { exact: true }).waitFor();
+    await partialHistory.getByText(partialScan.epc, { exact: true }).waitFor();
+    await partialHistory.getByRole('button', { name: 'Detail' }).click();
+    const releasedScan = dialog.getByRole('list', { name: 'Rincian barang dan EPC' });
+    await releasedScan.getByText(partialScan.epc, { exact: true }).waitFor();
+    await releasedScan.getByText('Reservasi dilepas', { exact: true }).waitFor();
+    await dialog.getByRole('button', { name: 'Tutup' }).click();
+    assert.equal(cancellations, 1);
+
+    await page.getByRole('button', { name: 'Pengiriman', exact: true }).click();
+    await page.getByRole('button', { name: 'Buat Pengiriman Baru' }).click();
+    const source = page.getByLabel('Sumber Pengiriman');
+    const epcs = page.getByLabel('EPC Pengiriman');
+    await source.locator('option').filter({ hasText: 'Penjualan POS · POS-123' }).waitFor({ state: 'attached' });
+    assert.equal(await source.locator('option').filter({ hasText: 'ORD-BATAL' }).count(), 0);
+    await source.selectOption(`PICKING_ORANG1:${orderId}`);
+    assert.equal(await epcs.inputValue(), makeEpc(10));
+    await source.selectOption(`OUTBOUND_PICKING:${outboundId}`);
+    assert.equal(await epcs.inputValue(), makeEpc(12));
+    await source.selectOption('STOK_BEBAS');
+    assert.equal(await epcs.inputValue(), '');
+    await source.selectOption(`PICKING_ORANG1:${orderId}`);
+    await page.getByLabel('Tujuan / Nama Pelanggan').fill('Gudang');
+    await page.getByRole('button', { name: 'Terbitkan & Simpan' }).click();
+    await page.getByText('Order sumber sudah berubah.', { exact: true }).waitFor();
+    assert.equal(await epcs.inputValue(), '');
+    assert.equal(await source.inputValue(), '');
+    assert.deepEqual(shipmentCalls[0].source, { type: 'PICKING_ORANG1', order_id: orderId });
+    await source.selectOption(`POS:${saleId}`);
+    assert.equal(await epcs.inputValue(), makeEpc(14));
+    await page.getByLabel('No. Resi / Surat Jalan').fill('RESI-POS-MOCK');
+    await page.getByLabel('Tujuan / Nama Pelanggan').fill('Tujuan POS');
+    await page.getByRole('button', { name: 'Terbitkan & Simpan' }).click();
+    await page.getByText('Pengiriman berhasil disimpan.', { exact: true }).waitFor();
+    assert.deepEqual(shipmentCalls[1].source, { type: 'POS', sale_id: saleId });
+    assert.deepEqual(shipmentCalls[1].epcs, [makeEpc(14)]);
     assert.deepEqual(errors, []);
   } finally {
     await browser?.close();

@@ -75,7 +75,7 @@ export default function GateSecurityPage({
       setInStockEpcs(Array.isArray(readyJson.data?.in_stock) ? readyJson.data.in_stock : []);
       const rawTags = Array.isArray(tagsJson.data) ? tagsJson.data : [];
       setAvailableTags(
-        rawTags.filter((t) => ['IN_STOCK', 'RESERVED'].includes(String(t.status || '').toUpperCase()))
+        rawTags.filter(t => String(t.status || '').toUpperCase() === 'IN_STOCK')
       );
     } catch (err) {
       console.error('Gagal mengambil data Gate Pass & Security:', err);

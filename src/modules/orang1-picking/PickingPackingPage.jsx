@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ClipboardCheck, ClipboardList, Package, PackageCheck, Plus, RefreshCw, ScanLine, Search, Send } from 'lucide-react';
+import { Button } from '../../components/ui/button';
 import { pickingRequest, validatePickingSelection } from './api';
 import { inboundRequest } from '../orang1-inbound/api';
+import CancellationDialog, { CancellationAudit } from './CancellationDialog';
 import PackingDetailsDialog from './PackingDetailsDialog';
 
 const columns = [
@@ -86,8 +88,34 @@ function OrderCard({ order, column, open }) {
         {!shipped && (
           <button className={primary} disabled={ready && !picked} onClick={() => open(order.id, ready ? 'packing' : 'scan')}>{action}</button>
         )}
+        {order.can_cancel === true && (
+          <Button type="button" variant="destructive" size="sm" onClick={() => open(order.id, 'cancel')}>Batalkan Pesanan</Button>
+        )}
       </div>
     </article>
+  );
+}
+
+function CancelledOrders({ orders, open }) {
+  return (
+    <section aria-label="Riwayat pesanan dibatalkan" className="space-y-3">
+      {orders.map(order => (
+        <article key={order.id} aria-label={order.order_number} className="space-y-3 rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="break-all font-semibold">{order.order_number}</h3>
+            <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">Dibatalkan</span>
+          </div>
+          <ul className="space-y-1 text-sm">
+            {order.lines.map(line => (
+              <li key={line.product_id}>{line.product_name} · {line.sku} · {line.requested_qty} unit diminta</li>
+            ))}
+          </ul>
+          <CancellationAudit audit={order.cancellation} />
+          <button type="button" className={secondary} onClick={() => open(order.id, 'detail')}>Detail</button>
+        </article>
+      ))}
+      {!orders.length && <p className="text-sm text-muted-foreground">Tidak ada pesanan dibatalkan yang sesuai.</p>}
+    </section>
   );
 }
 
@@ -176,7 +204,7 @@ function OrderDialog({ order, close, onScan, onReload, needsReload, notify }) {
   const [selection, setSelection] = useState([]);
   const [candidates, setCandidates] = useState({ lines: null, loading: true, error: '' });
   const [batchProgress, setBatchProgress] = useState(null);
-  const ready = order.status === 'SIAP_PACKING';
+  const ready = !['MENUNGGU_PICKING', 'SEDANG_DIAMBIL'].includes(order.status);
   useEffect(() => {
     const trigger = document.activeElement;
     const element = dialog.current;
@@ -369,6 +397,19 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     setOrders(previous => previous.map(order => order.id === updated.id ? updated : order));
   }
 
+  async function cancelOrder(order, body) {
+    const data = await pickingRequest(`/orders/${encodeURIComponent(order.id)}/cancel`, { body });
+    if (data?.id !== order.id || data.status !== 'DIBATALKAN' || !data.cancellation) {
+      throw new Error('Respons pembatalan belum lengkap. Muat ulang pesanan untuk memeriksa status.');
+    }
+    updateOrder({ ...order, ...data });
+    setPackingStatus('');
+    setStatus('DIBATALKAN');
+    setDialog(null);
+    showNotification?.('Pesanan picking dibatalkan.', 'success');
+    void load();
+  }
+
   useEffect(() => {
     if (!showCreateModal) return;
     let current = true;
@@ -453,6 +494,9 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     return terms.every(term => searchable.includes(term));
   });
   const selected = dialog && orders.find(order => order.id === dialog.id);
+  const openOrder = (id, mode) => setDialog({ id, mode });
+  const closeOrder = () => setDialog(null);
+  const history = status === 'DIBATALKAN';
 
   return (
     <div className="space-y-5">
@@ -502,13 +546,16 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
           }}>
             <option value="">Semua status</option>
             {columns.map(column => <option key={column.status} value={column.status}>{column.label}</option>)}
+            <option value="DIBATALKAN">Dibatalkan</option>
           </select>
         </label>
       </div>
       {loading && <p className="text-sm text-slate-600" role="status">Memuat pesanan…</p>}
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{error}{orders.length > 0 ? ' Daftar menampilkan hasil terakhir.' : ''}</p>}
-      {!loading && !error && !orders.length && <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Belum ada pesanan picking.</p>}
-      {(orders.length > 0 || (!loading && !error)) && (
+      {!history && !loading && !error && !orders.length && <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Belum ada pesanan picking.</p>}
+      {(orders.length > 0 || (!loading && !error)) && (history
+        ? <CancelledOrders orders={matches.filter(order => order.status === 'DIBATALKAN')} open={openOrder} />
+        : (
         <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
           {columns.filter(column => !status || status === column.status).map(column => {
             const cards = matches.filter(order => order.status === column.status);
@@ -520,19 +567,25 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
                   {column.label} <span className="ml-auto text-xs text-slate-500">{cards.length}</span>
                 </h3>
                 <div className="space-y-3">
-                  {cards.map(order => <OrderCard key={order.id} order={order} column={column} open={(id, mode) => setDialog({ id, mode })} />)}
+                  {cards.map(order => <OrderCard key={order.id} order={order} column={column} open={openOrder} />)}
                   {!cards.length && <p className="rounded-lg border border-dashed border-slate-200 p-4 text-xs text-slate-500">Tidak ada pesanan pada kolom ini.</p>}
                 </div>
               </section>
             );
           })}
         </div>
+      ))}
+      {selected && dialog.mode === 'cancel' && (
+        <CancellationDialog key={selected.id} order={selected} close={closeOrder} onSubmit={body => cancelOrder(selected, body)} />
       )}
-      {selected && (dialog.mode === 'scan'
-        ? <OrderDialog key={selected.id} order={selected} close={() => setDialog(null)} onScan={scan} onReload={reloadOrder}
-            needsReload={unreconciledOrders.includes(selected.id)} notify={showNotification} />
-        : <PackingDetailsDialog key={`${selected.id}:${dialog.mode}`} orderId={selected.id} orderNumber={selected.order_number}
-            mode={dialog.mode} close={() => setDialog(null)} onOrderChange={updateOrder} notify={showNotification} />)}
+      {selected && dialog.mode === 'scan' && (
+        <OrderDialog key={selected.id} order={selected} close={closeOrder} onScan={scan} onReload={reloadOrder}
+          needsReload={unreconciledOrders.includes(selected.id)} notify={showNotification} />
+      )}
+      {selected && (dialog.mode === 'detail' || dialog.mode === 'packing') && (
+        <PackingDetailsDialog key={`${selected.id}:${dialog.mode}`} orderId={selected.id} orderNumber={selected.order_number}
+          mode={dialog.mode} close={closeOrder} onOrderChange={updateOrder} notify={showNotification} />
+      )}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
           <div className="max-h-[90dvh] w-full max-w-md overflow-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
