@@ -1,9 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { Download, FileText, Plus, Printer, Send } from 'lucide-react';
 import { API_BASE_URL } from '../../config/api';
+import { tokenStorageKey } from '../../config/authSession';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+
+const emptyShipment = {
+  sourceKey: '', resi: '', courier: 'JNE Express', dest: '', epcs: '', total_amount: '0',
+};
 
 export default function InventoryLedgerPage({
   activeMenu = 'penyimpanan',
@@ -28,6 +33,7 @@ export default function InventoryLedgerPage({
   const [targetLoc, setTargetLoc] = useState('');
   const [allTags, setAllTags] = useState([]);
   const [pickingOrders, setPickingOrders] = useState([]);
+  const [posOrders, setPosOrders] = useState([]);
   const [selectedPutawayEpcs, setSelectedPutawayEpcs] = useState([]);
   const [isBulkPutaway, setIsBulkPutaway] = useState(false);
 
@@ -35,22 +41,37 @@ export default function InventoryLedgerPage({
   const [shippingList, setShippingList] = useState([]);
   const [isSavingShipping, setIsSavingShipping] = useState(false);
   const [showShippingModal, setShowShippingModal] = useState(false);
-  const [shipForm, setShipForm] = useState({
-    resi: '',
-    courier: 'JNE Express',
-    dest: '',
-    epcs: '',
-    total_amount: '0',
-  });
+  const [shipForm, setShipForm] = useState(emptyShipment);
+  const shippingSources = [
+    { key: 'STOK_BEBAS', label: 'Stok Bebas', source: { type: 'STOK_BEBAS' } },
+    ...pickingOrders.filter(order => order.status !== 'DIBATALKAN'
+      && ['PICKING_ORANG1', 'OUTBOUND_PICKING'].includes(order.source_type) && order.items?.length).map(order => ({
+      key: `${order.source_type}:${order.id}`,
+      label: `${order.source_type === 'PICKING_ORANG1' ? 'Picking & Packing' : 'Picking Outbound'} · ${order.order_number}`,
+      source: { type: order.source_type, order_id: order.id },
+      epcs: order.items.map(item => item.epc).filter(Boolean),
+      resi: `RESI-${order.order_number}`,
+      destination: order.source_type === 'OUTBOUND_PICKING' ? order.destination : '',
+    })),
+    ...posOrders.filter(sale => sale.epcs?.length).map(sale => ({
+      key: `POS:${sale.id}`, label: `Penjualan POS · ${sale.invoice_or_resi}`,
+      source: { type: 'POS', sale_id: sale.id }, epcs: sale.epcs,
+    })),
+  ];
+  const shippingSource = shippingSources.find(option => option.key === shipForm.sourceKey);
 
   const fetchInventoryData = async () => {
     try {
-      const [locRes, ledRes, shipRes, tagsRes, pickRes] = await Promise.all([
+      const token = localStorage.getItem(tokenStorageKey);
+      const [locRes, ledRes, shipRes, tagsRes, pickRes, posRes] = await Promise.all([
         fetch(`${API_BASE_URL}/locations`),
         fetch(`${API_BASE_URL}/inventory/ledger`),
         fetch(`${API_BASE_URL}/outbound/shipments`),
         fetch(`${API_BASE_URL}/tags`).catch(() => null),
-        fetch(`${API_BASE_URL}/outbound/picking-orders`).catch(() => null),
+        fetch(`${API_BASE_URL}/outbound/picking-orders?for_handoff=1`).catch(() => null),
+        activeMenu === 'pengiriman' && token
+          ? fetch(`${API_BASE_URL}/outbound/pos-orders`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+          : null,
       ]);
 
       if (!locRes.ok) {
@@ -72,10 +93,10 @@ export default function InventoryLedgerPage({
         setAllTags(Array.isArray(tagsJson.data) ? tagsJson.data : []);
       }
 
-      if (pickRes && pickRes.ok) {
-        const pickJson = await pickRes.json().catch(() => ({}));
-        setPickingOrders(Array.isArray(pickJson.data) ? pickJson.data : []);
-      }
+      const pickJson = pickRes?.ok ? await pickRes.json().catch(() => ({})) : {};
+      setPickingOrders(Array.isArray(pickJson.data) ? pickJson.data : []);
+      const posJson = posRes?.ok ? await posRes.json().catch(() => ({})) : {};
+      setPosOrders(Array.isArray(posJson.data) ? posJson.data : []);
 
       if (shipRes.ok) {
         const shipJson = await shipRes.json();
@@ -106,7 +127,7 @@ export default function InventoryLedgerPage({
 
   useEffect(() => {
     fetchInventoryData();
-  }, [lastEvent]);
+  }, [lastEvent, activeMenu]);
 
   useEffect(() => {
     const firstRack = locations.find((loc) => loc.location_type === 'RACK');
@@ -670,6 +691,10 @@ export default function InventoryLedgerPage({
 
   const handleAddShipping = async (e) => {
     e.preventDefault();
+    if (!shippingSource) {
+      showNotification?.('Pilih sumber Pengiriman terlebih dahulu.', 'error');
+      return;
+    }
 
     const epcs = shipForm.epcs
       .split(/[\n,;]+/)
@@ -679,6 +704,11 @@ export default function InventoryLedgerPage({
 
     if (!shipForm.resi.trim() || !shipForm.dest.trim() || epcs.length === 0) {
       showNotification?.('Nomor resi, tujuan, dan minimal satu EPC wajib diisi.', 'error');
+      return;
+    }
+
+    if (shippingSource.epcs && epcs.some(epc => !shippingSource.epcs.includes(epc))) {
+      showNotification?.('Daftar EPC harus berasal dari sumber Pengiriman yang dipilih.', 'error');
       return;
     }
 
@@ -698,23 +728,22 @@ export default function InventoryLedgerPage({
           courier: shipForm.courier,
           epcs,
           total_amount: totalAmount,
+          source: shippingSource.source,
         }),
       });
 
       const json = await res.json();
       if (!res.ok) {
+        if (res.status === 409 && String(json.code || '').startsWith('SHIPMENT_SOURCE_')) {
+          setShipForm(previous => ({ ...previous, sourceKey: '', epcs: '' }));
+          await fetchInventoryData();
+        }
         throw new Error(json.message || 'Gagal menyimpan pengiriman.');
       }
 
       showNotification?.(json.message || 'Pengiriman berhasil disimpan.', 'success');
       setShowShippingModal(false);
-      setShipForm({
-        resi: '',
-        courier: 'JNE Express',
-        dest: '',
-        epcs: '',
-        total_amount: '0',
-      });
+      setShipForm(emptyShipment);
       await fetchInventoryData();
     } catch (err) {
       console.error('Add outbound shipment error:', err);
@@ -1347,55 +1376,39 @@ export default function InventoryLedgerPage({
                 </button>
               </div>
               <form onSubmit={handleAddShipping} className="space-y-4">
-                {pickingOrders.length > 0 && (
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
-                      Tarik Otomatis dari Order Picking & Packing (Opsional)
-                    </label>
+                <label className="block p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
+                      Sumber Pengiriman
+                    </span>
                     <select
-                      defaultValue=""
+                      required
+                      value={shippingSource?.key || ''}
+                      disabled={isSavingShipping}
                       onChange={(e) => {
-                        const ord = pickingOrders.find((o) => String(o.id) === e.target.value);
-                        if (!ord) return;
-                        const epcsFromOrder = Array.isArray(ord.epcs)
-                          ? ord.epcs
-                          : Array.isArray(ord.items)
-                          ? ord.items.map((it) => it.epc).filter(Boolean)
-                          : [];
+                        const next = shippingSources.find(option => option.key === e.target.value);
                         setShipForm((prev) => ({
                           ...prev,
-                          resi: prev.resi || `RESI-${ord.order_number || String(ord.id).slice(0, 6).toUpperCase()}`,
-                          dest:
-                            ord.customer_or_destination &&
-                            !['MENUNGGU_PICKING', 'SEDANG_DIAMBIL', 'SIAP_PACKING', 'SELESAI_PACKING', 'MENUNGGU_PACKING'].includes(
-                              String(ord.customer_or_destination).toUpperCase()
-                            )
-                              ? ord.customer_or_destination
-                              : prev.dest || `Pelanggan ${ord.order_number || ''}`,
-                          epcs: epcsFromOrder.length > 0 ? epcsFromOrder.join('\n') : prev.epcs,
+                          sourceKey: next?.key ?? '',
+                          resi: next?.resi ?? '',
+                          dest: next?.destination ?? '',
+                          epcs: next?.epcs?.join('\n') ?? '',
+                          total_amount: '0',
                         }));
                       }}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
                     >
-                      <option value="">-- Pilih Order Picking untuk isi Resi & EPC otomatis --</option>
-                      {pickingOrders.map((ord) => {
-                        const itemCount = Array.isArray(ord.items) ? ord.items.length : Number(ord.scanned_items || 0);
-                        return (
-                          <option key={ord.id} value={ord.id}>
-                            {ord.order_number || ord.invoice_or_resi || ord.id} — Status: {ord.status} ({itemCount} EPC ter-scan)
-                          </option>
-                        );
-                      })}
+                      <option value="">Pilih sumber</option>
+                      {shippingSources.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
                     </select>
-                  </div>
-                )}
+                </label>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    <label htmlFor="outbound-resi" className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                       No. Resi / Surat Jalan
                     </label>
                     <input
+                      id="outbound-resi"
                       type="text"
                       required
                       value={shipForm.resi}
@@ -1420,10 +1433,11 @@ export default function InventoryLedgerPage({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  <label htmlFor="outbound-destination" className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                     Tujuan / Nama Pelanggan
                   </label>
                   <input
+                    id="outbound-destination"
                     type="text"
                     required
                     placeholder="PT Sentosa Computer (Surabaya)"
@@ -1434,13 +1448,12 @@ export default function InventoryLedgerPage({
                 </div>
                 <div>
                   {(() => {
-                    const shippableTags = allTags.filter((t) =>
-                      ['AUTHORIZED_OUT', 'RESERVED', 'IN_STOCK'].includes(
-                        String(t.status || '').toUpperCase()
-                      )
-                    );
+                    const tagsByEpc = new Map(allTags.map(tag => [tag.epc, tag]));
+                    const shippableTags = shippingSource?.source.type === 'STOK_BEBAS'
+                      ? allTags.filter(tag => tag.status === 'IN_STOCK')
+                      : (shippingSource?.epcs ?? []).map(epc => tagsByEpc.get(epc) ?? { epc });
                     const currentEpcs = shipForm.epcs
-                      .split(/[\n,]+/)
+                      .split(/[\n,;]+/)
                       .map((s) => s.trim())
                       .filter(Boolean);
                     return (
@@ -1520,6 +1533,8 @@ export default function InventoryLedgerPage({
                   <textarea
                     required
                     rows={3}
+                    aria-label="EPC Pengiriman"
+                    disabled={!shippingSource || isSavingShipping}
                     value={shipForm.epcs}
                     onChange={(e) => setShipForm({ ...shipForm, epcs: e.target.value })}
                     placeholder="Atau paste banyak EPC (pisahkan baris baru atau koma)..."
@@ -1555,7 +1570,7 @@ export default function InventoryLedgerPage({
                   </button>
                   <button
                     type="submit"
-                    disabled={isSavingShipping}
+                    disabled={isSavingShipping || !shippingSource}
                     className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium shadow-md disabled:opacity-60"
                   >
                     {isSavingShipping ? 'Menyimpan...' : 'Terbitkan & Simpan'}
