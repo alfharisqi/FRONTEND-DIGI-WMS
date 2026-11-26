@@ -125,6 +125,7 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
       }
       setStock({
         ledger: ledger.status === 'fulfilled' && Array.isArray(ledger.value) ? new Map(ledger.value.map(row => [row.sku, row.current_stock])) : null,
+        staging: ledger.status === 'fulfilled' && Array.isArray(ledger.value) ? new Map(ledger.value.map(row => [row.sku, Number(row.staging_stock ?? 0)])) : null,
         racks: racks.status === 'fulfilled' && Array.isArray(racks.value) ? available : null,
         rackLocations: racks.status === 'fulfilled' && Array.isArray(racks.value)
           ? new Map([...rackLocations.entries()].map(([k, set]) => [k, [...set].sort().join(', ')]))
@@ -256,8 +257,12 @@ export default function InboundTaggingPage({ activeMenu = 'penerimaan', lastEven
             return display(row.original.default_location_code || actual);
           },
         },
-        { id: 'ledger_stock', header: 'Saldo Ledger', accessorFn: row => Number(stock.ledger?.get(row.sku) ?? 0), cell: ({ row }) => <span className="font-semibold">{display(stock.ledger?.get(row.original.sku))}</span> },
-        { id: 'rack_stock', header: 'Tersedia di Rak', accessorFn: row => Number(stock.racks?.get(String(row.id)) ?? 0), cell: ({ row }) => display(stock.racks && (stock.racks.get(String(row.original.id)) ?? 0)) },
+        { id: 'ledger_stock', header: 'Saldo Ledger (Total)', accessorFn: row => Number(stock.ledger?.get(row.sku) ?? 0), cell: ({ row }) => <span className="font-semibold">{display(stock.ledger?.get(row.original.sku))}</span> },
+        { id: 'rack_stock', header: 'Siap di Rak (In-Rack)', accessorFn: row => Number(stock.racks?.get(String(row.id)) ?? 0), cell: ({ row }) => <span className="font-semibold text-emerald-700 dark:text-emerald-400">{display(stock.racks && (stock.racks.get(String(row.original.id)) ?? 0))}</span> },
+        { id: 'staging_stock', header: 'Staging / Belum Putaway', accessorFn: row => Number(stock.staging?.get(row.sku) ?? 0), cell: ({ row }) => {
+          const val = stock.staging?.get(row.original.sku);
+          return <span className={val > 0 ? 'font-semibold text-amber-700 dark:text-amber-400' : 'text-muted-foreground'}>{display(val)}</span>;
+        } },
         { id: 'min_stock', header: 'Minimum Stok', accessorFn: row => Number(row.min_stock_alert ?? row.min_stock_threshold ?? 0), cell: ({ row }) => display(row.original.min_stock_alert ?? row.original.min_stock_threshold) },
         { id: 'price', header: 'Harga Satuan', accessorFn: row => Number(row.price ?? row.unit_price ?? 0), cell: ({ row }) => <span className="whitespace-nowrap">Rp {Number(row.original.price ?? row.original.unit_price ?? 0).toLocaleString('id-ID')}</span> },
         { id: 'actions', header: 'Aksi', enableSorting: false, enableHiding: false, cell: ({ row }) => rowActions(row.original) },

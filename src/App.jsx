@@ -252,12 +252,16 @@ export default function App() {
   };
 
   const navGroups = useMemo(() => {
+    const isSecurity = roleUpper === 'SECURITY';
+    const isStaff = roleUpper === 'WAREHOUSE_STAFF';
+    const roBadge = (cond) => (cond ? { badge: 'View', badgeVariant: 'muted' } : {});
+
     const systemItems = [
       ...(isAdminOrSupervisor
         ? [{ id: 'users', label: 'Manajemen User', icon: Users }]
         : []),
       { id: 'laporan', label: 'Laporan & Analitik', icon: BarChart3 },
-      { id: 'pengaturan', label: 'Pengaturan', icon: Settings },
+      { id: 'pengaturan', label: 'Pengaturan', icon: Settings, ...roBadge(isSecurity || isStaff) },
       { id: 'flyer', label: 'Flyer Promosi', icon: ImageIcon },
     ];
 
@@ -266,22 +270,22 @@ export default function App() {
         title: 'Menu Utama',
         items: [
           { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { id: 'penerimaan', label: 'Penerimaan', icon: Truck },
-          { id: 'stok', label: 'Stok Barang', icon: Package },
-          { id: 'penyimpanan', label: 'Penyimpanan Rak', icon: MapPin },
+          { id: 'penerimaan', label: 'Penerimaan', icon: Truck, ...roBadge(isSecurity) },
+          { id: 'stok', label: 'Stok Barang', icon: Package, ...roBadge(isSecurity) },
+          { id: 'penyimpanan', label: 'Penyimpanan Rak', icon: MapPin, ...roBadge(isSecurity) },
           { id: 'stok-rak', label: 'Stok per Rak', icon: Layers },
-          { id: 'picking', label: 'Picking & Packing', icon: ClipboardList },
-          { id: 'pengiriman', label: 'Pengiriman', icon: Send },
+          { id: 'picking', label: 'Picking & Packing', icon: ClipboardList, ...roBadge(isSecurity) },
+          { id: 'pengiriman', label: 'Pengiriman', icon: Send, ...roBadge(isSecurity) },
         ],
       },
       {
         title: 'POS & RFID Gerbang',
         items: [
-          { id: 'pos', label: 'Kasir POS', icon: ShoppingCart },
-          { id: 'retur', label: 'Retur POS', icon: RotateCcw },
-          { id: 'rfid-tag', label: 'Tag & Encoding', icon: Tag },
-          { id: 'master-box', label: 'Master Box (Karton)', icon: Boxes },
-          { id: 'rfid-opname', label: 'Opname Handheld', icon: Radio },
+          { id: 'pos', label: 'Kasir POS', icon: ShoppingCart, ...roBadge(isSecurity) },
+          { id: 'retur', label: 'Retur POS', icon: RotateCcw, ...roBadge(isSecurity) },
+          { id: 'rfid-tag', label: 'Tag & Encoding', icon: Tag, ...roBadge(isSecurity) },
+          { id: 'master-box', label: 'Master Box (Karton)', icon: Boxes, ...roBadge(isSecurity) },
+          { id: 'rfid-opname', label: 'Opname Handheld', icon: Radio, ...roBadge(isSecurity) },
           { id: 'rfid-gate', label: 'Gate & Alarm Live', icon: Siren },
           { id: 'gate-security', label: 'Keamanan & Pass', icon: ShieldCheck },
           { id: 'ledger', label: 'Ledger Pergerakan', icon: FileText },

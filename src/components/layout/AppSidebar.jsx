@@ -231,6 +231,8 @@ export function AppSidebar({
                             'ml-auto rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none',
                             item.badgeVariant === 'destructive'
                               ? 'bg-destructive/15 text-destructive'
+                              : item.badgeVariant === 'muted'
+                              ? 'bg-muted text-muted-foreground border border-border'
                               : 'bg-primary text-primary-foreground'
                           )}
                         >

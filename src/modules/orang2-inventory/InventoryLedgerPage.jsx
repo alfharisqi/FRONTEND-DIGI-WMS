@@ -21,6 +21,8 @@ export default function InventoryLedgerPage({
   const [localSearch, setLocalSearch] = useState('');
   const [showRackModal, setShowRackModal] = useState(false);
   const [selectedRackId, setSelectedRackId] = useState(null);
+  const [editingRack, setEditingRack] = useState(null);
+  const [rackActionBusy, setRackActionBusy] = useState(false);
   const [isSavingRack, setIsSavingRack] = useState(false);
   const [rackForm, setRackForm] = useState({
     code: '',
@@ -252,6 +254,98 @@ export default function InventoryLedgerPage({
       showNotification?.(err.message || 'Terjadi kesalahan saat menambahkan rak.', 'error');
     } finally {
       setIsSavingRack(false);
+    }
+  };
+
+  const handleUpdateRack = async (e) => {
+    e.preventDefault();
+    if (!editingRack?.id) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations/${encodeURIComponent(editingRack.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: editingRack.code.trim(),
+          zone_code: editingRack.zone_code.trim(),
+          name: editingRack.name.trim(),
+          max_capacity: Number(editingRack.max_capacity),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal memperbarui rak.');
+      showNotification?.(json.message || 'Rak berhasil diperbarui.', 'success');
+      setEditingRack(null);
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal memperbarui rak.', 'error');
+    } finally {
+      setRackActionBusy(false);
+    }
+  };
+
+  const handleDeleteRack = async (rack) => {
+    if (!rack?.id || rackActionBusy) return;
+    if (!window.confirm(`Hapus Rak ${rack.code} (${rack.name})?`)) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations/${encodeURIComponent(rack.id)}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal menghapus rak.');
+      showNotification?.(json.message || `Rak ${rack.code} berhasil dihapus.`, 'success');
+      setSelectedRackId(null);
+      setEditingRack(null);
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal menghapus rak.', 'error');
+    } finally {
+      setRackActionBusy(false);
+    }
+  };
+
+  const handleQuickMoveToRack = async (epcOrBoxEpc, targetRackCode) => {
+    if (!epcOrBoxEpc || !targetRackCode || rackActionBusy) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          epc: epcOrBoxEpc,
+          location_code: targetRackCode,
+          reference_doc: 'TRANSFER-ANTAR-RAK',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal memindahkan ke rak tujuan.');
+      showNotification?.(json.message || `Berhasil dipindahkan ke rak ${targetRackCode}.`, 'success');
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal memindahkan barang/box.', 'error');
+    } finally {
+      setRackActionBusy(false);
+    }
+  };
+
+  const handleQuickUnpackBox = async (box) => {
+    if (!box?.id || rackActionBusy) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/boxes/${encodeURIComponent(box.id)}/unpack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal memecah Box.');
+      showNotification?.(json.message || `Box ${box.box_code} berhasil dipecah!`, 'success');
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal memecah Box.', 'error');
+    } finally {
+      setRackActionBusy(false);
     }
   };
 
@@ -958,7 +1052,7 @@ export default function InventoryLedgerPage({
               >
                 <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
                   <div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono font-bold text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
                         {activeRack.code}
                       </span>
@@ -973,15 +1067,119 @@ export default function InventoryLedgerPage({
                       {activeRack.name}
                     </h3>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedRackId(null)}
-                    className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2"
-                    aria-label="Tutup detail rak"
-                  >
-                    ×
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={rackActionBusy}
+                      onClick={() =>
+                        setEditingRack(
+                          editingRack?.id === activeRack.id
+                            ? null
+                            : {
+                                id: activeRack.id,
+                                code: activeRack.code,
+                                zone_code: activeRack.zone_code,
+                                name: activeRack.name,
+                                max_capacity: String(activeRack.max_capacity || 50),
+                              }
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                    >
+                      {editingRack?.id === activeRack.id ? 'Batal Edit' : '✏️ Edit Rak'}
+                    </button>
+                    {occupied === 0 && (
+                      <button
+                        type="button"
+                        disabled={rackActionBusy}
+                        onClick={() => handleDeleteRack(activeRack)}
+                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition"
+                      >
+                        🗑️ Hapus Rak
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRackId(null);
+                        setEditingRack(null);
+                      }}
+                      className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2"
+                      aria-label="Tutup detail rak"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </div>
+
+                {editingRack?.id === activeRack.id && (
+                  <form
+                    onSubmit={handleUpdateRack}
+                    className="p-4 rounded-xl bg-blue-50/50 border border-blue-200 space-y-3"
+                  >
+                    <p className="text-xs font-bold text-blue-900 uppercase tracking-wider">
+                      Edit Konfigurasi Rak {activeRack.code}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Kode Rak
+                        </label>
+                        <input
+                          required
+                          value={editingRack.code}
+                          onChange={(e) => setEditingRack({ ...editingRack, code: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Kode Zona
+                        </label>
+                        <input
+                          required
+                          value={editingRack.zone_code}
+                          onChange={(e) => setEditingRack({ ...editingRack, zone_code: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Nama Rak
+                        </label>
+                        <input
+                          required
+                          value={editingRack.name}
+                          onChange={(e) => setEditingRack({ ...editingRack, name: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Kapasitas Maksimum (min. {Math.max(1, occupied)})
+                        </label>
+                        <input
+                          required
+                          type="number"
+                          min={Math.max(1, occupied)}
+                          step="1"
+                          value={editingRack.max_capacity}
+                          onChange={(e) => setEditingRack({ ...editingRack, max_capacity: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="submit"
+                        disabled={rackActionBusy}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
+                      >
+                        {rackActionBusy ? 'Menyimpan...' : 'Simpan Perubahan Rak'}
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 {/* Ringkasan Angka */}
                 <div className="grid grid-cols-3 gap-3">
@@ -1045,63 +1243,125 @@ export default function InventoryLedgerPage({
                   )}
                 </div>
 
-                {/* Daftar Box di Rak */}
+                {/* Daftar Box di Rak (dengan Aksi Cepat Pecah Box & Pindah Rak) */}
                 {rackBoxes.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                       Daftar Box di Rak Ini ({rackBoxes.length} Box)
                     </h4>
-                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
-                      {rackBoxes.map((bx) => (
-                        <div
-                          key={bx.id || bx.box_code}
-                          className="px-4 py-2 bg-white flex items-center justify-between gap-3 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <span className="font-mono font-bold text-indigo-700">
-                                {bx.box_code}
-                              </span>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                {bx.box_level === 'MASTER' ? 'MASTER BOX' : 'INNER BOX'}
-                              </span>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                      {rackBoxes.map((bx) => {
+                        const otherRacks = rackLocations.filter((r) => r.id !== activeRack.id);
+                        return (
+                          <div
+                            key={bx.id || bx.box_code}
+                            className="px-4 py-2.5 bg-white flex flex-wrap items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-indigo-700">
+                                  {bx.box_code}
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  {bx.box_level === 'MASTER' ? 'MASTER BOX' : 'INNER BOX'}
+                                </span>
+                                <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                                  {bx.qty_per_box} unit
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                {bx.product_name} ({bx.sku}) · EPC: <span className="font-mono">{bx.master_epc}</span>
+                              </p>
                             </div>
-                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                              {bx.product_name} ({bx.sku}) · EPC: <span className="font-mono">{bx.master_epc}</span>
-                            </p>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={rackActionBusy}
+                                onClick={() => handleQuickUnpackBox(bx)}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold disabled:opacity-50"
+                                title="Pecah Box (Break-Pack) langsung di rak ini"
+                              >
+                                {bx.box_level === 'MASTER' ? '🔨 Pecah ke Inner' : '🔨 Pecah ke Tag'}
+                              </button>
+                              {otherRacks.length > 0 && (
+                                <select
+                                  aria-label={`Pindah ${bx.box_code} ke rak lain`}
+                                  disabled={rackActionBusy}
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleQuickMoveToRack(bx.master_epc || bx.box_code, e.target.value);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-700"
+                                >
+                                  <option value="">⇄ Pindah Rak...</option>
+                                  {otherRacks.map((r) => (
+                                    <option key={r.id} value={r.code}>
+                                      Ke {r.code} ({r.name})
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
                           </div>
-                          <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg shrink-0">
-                            {bx.qty_per_box} unit
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
 
-                {/* Daftar Tag RFID Satuan di Rak */}
+                {/* Daftar Tag RFID Satuan di Rak (dengan Aksi Cepat Pindah Rak) */}
                 {rackUnitTags.length > 0 && (
                   <div className="space-y-2">
                     <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                       Daftar Tag RFID Satuan di Rak Ini ({rackUnitTags.length} Tag)
                     </h4>
-                    <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
-                      {rackUnitTags.map((tg) => (
-                        <div
-                          key={tg.id || tg.epc}
-                          className="px-4 py-2 bg-white flex items-center justify-between gap-3 text-xs"
-                        >
-                          <div className="min-w-0">
-                            <p className="font-mono font-semibold text-slate-800">{tg.epc}</p>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              {tg.product_name || '-'} ({tg.sku || '-'})
-                            </p>
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                      {rackUnitTags.map((tg) => {
+                        const otherRacks = rackLocations.filter((r) => r.id !== activeRack.id);
+                        const canTransfer = String(tg.status || '').toUpperCase() === 'IN_STOCK';
+                        return (
+                          <div
+                            key={tg.id || tg.epc}
+                            className="px-4 py-2 bg-white flex flex-wrap items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="font-mono font-semibold text-slate-800">{tg.epc}</p>
+                              <p className="text-[11px] text-slate-500 truncate">
+                                {tg.product_name || '-'} ({tg.sku || '-'})
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                {tg.status}
+                              </span>
+                              {canTransfer && otherRacks.length > 0 && (
+                                <select
+                                  aria-label={`Pindah EPC ${tg.epc} ke rak lain`}
+                                  disabled={rackActionBusy}
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleQuickMoveToRack(tg.epc, e.target.value);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-700"
+                                >
+                                  <option value="">⇄ Pindah Rak...</option>
+                                  {otherRacks.map((r) => (
+                                    <option key={r.id} value={r.code}>
+                                      Ke {r.code}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
-                            {tg.status}
-                          </span>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
