@@ -32,6 +32,7 @@ export default function InventoryLedgerPage({
   const [epcCode, setEpcCode] = useState('');
   const [targetLoc, setTargetLoc] = useState('');
   const [allTags, setAllTags] = useState([]);
+  const [allBoxes, setAllBoxes] = useState([]);
   const [pickingOrders, setPickingOrders] = useState([]);
   const [posOrders, setPosOrders] = useState([]);
   const [selectedPutawayEpcs, setSelectedPutawayEpcs] = useState([]);
@@ -63,11 +64,12 @@ export default function InventoryLedgerPage({
   const fetchInventoryData = async () => {
     try {
       const token = localStorage.getItem(tokenStorageKey);
-      const [locRes, ledRes, shipRes, tagsRes, pickRes, posRes] = await Promise.all([
+      const [locRes, ledRes, shipRes, tagsRes, boxesRes, pickRes, posRes] = await Promise.all([
         fetch(`${API_BASE_URL}/locations`),
         fetch(`${API_BASE_URL}/inventory/ledger`),
         fetch(`${API_BASE_URL}/outbound/shipments`),
         fetch(`${API_BASE_URL}/tags`).catch(() => null),
+        fetch(`${API_BASE_URL}/boxes`).catch(() => null),
         fetch(`${API_BASE_URL}/outbound/picking-orders?for_handoff=1`).catch(() => null),
         activeMenu === 'pengiriman' && token
           ? fetch(`${API_BASE_URL}/outbound/pos-orders`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
@@ -91,6 +93,11 @@ export default function InventoryLedgerPage({
       if (tagsRes && tagsRes.ok) {
         const tagsJson = await tagsRes.json().catch(() => ({}));
         setAllTags(Array.isArray(tagsJson.data) ? tagsJson.data : []);
+      }
+
+      if (boxesRes && boxesRes.ok) {
+        const boxesJson = await boxesRes.json().catch(() => ({}));
+        setAllBoxes(Array.isArray(boxesJson.data) ? boxesJson.data : []);
       }
 
       const pickJson = pickRes?.ok ? await pickRes.json().catch(() => ({})) : {};
@@ -897,6 +904,84 @@ export default function InventoryLedgerPage({
                     />
                   </div>
                 </div>
+
+                {/* Ringkasan Kemasan Box & Tag Satuan di Rak */}
+                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="px-2 py-0.5 rounded-md font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      📦 {Number(loc.box_count || 0)} Box ({Number(loc.box_units_count || 0)} unit)
+                    </span>
+                    <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                      🏷️ {Number(loc.unit_items_count || 0)} Tag Satuan
+                    </span>
+                  </div>
+
+                  {Array.isArray(loc.products_summary) && loc.products_summary.length > 0 ? (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                        Isi Produk & Box di Rak:
+                      </p>
+                      <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                        {loc.products_summary.map((prod) => (
+                          <div
+                            key={prod.product_id || prod.sku}
+                            className="text-[11px] bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800 truncate">
+                                {prod.product_name}
+                              </p>
+                              <p className="text-[10px] font-mono text-slate-500">
+                                {prod.sku}
+                                {Number(prod.box_count) > 0
+                                  ? ` · ${prod.box_count} Box (${prod.box_qty}u)`
+                                  : ''}
+                                {Number(prod.unit_qty) > 0
+                                  ? ` · ${prod.unit_qty} Pcs`
+                                  : ''}
+                              </p>
+                            </div>
+                            <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded shrink-0">
+                              {prod.total_qty} unit
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 italic">
+                      Belum ada barang/box di rak ini.
+                    </p>
+                  )}
+
+                  {Array.isArray(loc.boxes) && loc.boxes.length > 0 && (
+                    <details className="text-[11px] group">
+                      <summary className="cursor-pointer font-semibold text-indigo-600 hover:text-indigo-800 select-none">
+                        Lihat Daftar Box ({loc.boxes.length} Box)
+                      </summary>
+                      <div className="mt-1.5 max-h-32 overflow-y-auto space-y-1 bg-indigo-50/40 p-2 rounded-lg border border-indigo-100">
+                        {loc.boxes.map((bx) => (
+                          <div
+                            key={bx.id || bx.box_code}
+                            className="flex items-center justify-between gap-2 bg-white px-2 py-1 rounded border border-slate-200 text-[10px]"
+                          >
+                            <div className="min-w-0">
+                              <span className="font-mono font-bold text-indigo-700">
+                                {bx.box_code}
+                              </span>
+                              <span className="ml-1 text-slate-500 truncate">
+                                · {bx.product_name}
+                              </span>
+                            </div>
+                            <span className="font-semibold text-slate-700 shrink-0">
+                              {bx.qty_per_box} u
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+                </div>
               </div>
             );
           })}
@@ -1005,83 +1090,121 @@ export default function InventoryLedgerPage({
           </div>
         )}
 
-        {/* Form Putaway / Pindah Lokasi Rak (Mendukung Bulk / Pilih Semua) */}
+        {/* Form Putaway / Pindah Lokasi Rak (Mendukung Tag Satuan & Box Massal) */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h3 className="font-bold text-slate-900 text-base">
-                Putaway & Transfer Tag RFID Antar-Rak (Satuan / Massal)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Centang banyak tag dari Staging Inbound (INB01) sekaligus atau paste daftar EPC untuk dipindah ke Rak Penyimpanan Utama.
-              </p>
-            </div>
-            {(() => {
-              const readyPutawayTags = allTags.filter(
-                (t) => String(t.status || '').toUpperCase() === 'ENCODED'
-              );
-              if (readyPutawayTags.length === 0) return null;
-              return (
-                <div className="flex items-center gap-2 text-xs shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPutawayEpcs(readyPutawayTags.map((t) => t.epc))}
-                    className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold transition"
-                  >
-                    Pilih Semua ({readyPutawayTags.length})
-                  </button>
-                  {selectedPutawayEpcs.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPutawayEpcs([])}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition"
-                    >
-                      Batal ({selectedPutawayEpcs.length})
-                    </button>
+          {(() => {
+            const readyPutawayTags = allTags
+              .filter((t) => String(t.status || '').toUpperCase() === 'ENCODED')
+              .map((t) => ({
+                key: t.id || t.epc,
+                code: t.epc,
+                isBox: false,
+                label: t.epc,
+                sublabel: `${t.sku || ''} ${t.product_name || 'Tag ENCODED'}`.trim(),
+                badge: 'TAG',
+              }));
+            const readyPutawayBoxes = allBoxes
+              .filter((b) => ['SEALED', 'IN_RACK'].includes(String(b.status || '').toUpperCase()))
+              .map((b) => ({
+                key: b.id || b.box_code,
+                code: b.master_epc || b.box_code,
+                isBox: true,
+                label: `${b.box_code} (${b.product_name || b.sku})`,
+                sublabel: `EPC: ${b.master_epc} · ${b.qty_per_box} unit · ${b.location_code ? `Rak ${b.location_code}` : 'Staging INB01'}`,
+                badge: b.box_level === 'MASTER' ? 'MASTER BOX' : 'INNER BOX',
+              }));
+            const allPutawayCandidates = [...readyPutawayBoxes, ...readyPutawayTags];
+
+            return (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">
+                      Putaway & Transfer Tag RFID / Box Antar-Rak (Satuan / Massal)
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Centang Box (Master/Inner Box) atau Tag RFID dari Staging Inbound (INB01) maupun pindah rak untuk ditempatkan ke Rak Penyimpanan Utama.
+                    </p>
+                  </div>
+                  {allPutawayCandidates.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs shrink-0">
+                      {readyPutawayBoxes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPutawayEpcs(readyPutawayBoxes.map((b) => b.code))}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold transition"
+                        >
+                          Pilih Semua Box ({readyPutawayBoxes.length})
+                        </button>
+                      )}
+                      {readyPutawayTags.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPutawayEpcs(readyPutawayTags.map((t) => t.code))}
+                          className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold transition"
+                        >
+                          Pilih Semua Tag ({readyPutawayTags.length})
+                        </button>
+                      )}
+                      {selectedPutawayEpcs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPutawayEpcs([])}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition"
+                        >
+                          Batal ({selectedPutawayEpcs.length})
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              );
-            })()}
-          </div>
 
-          {(() => {
-            const readyPutawayTags = allTags.filter(
-              (t) => String(t.status || '').toUpperCase() === 'ENCODED'
-            );
-            if (readyPutawayTags.length === 0) return null;
-            return (
-              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {readyPutawayTags.map((t) => {
-                  const checked = selectedPutawayEpcs.includes(t.epc);
-                  return (
-                    <label
-                      key={t.id || t.epc}
-                      className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition ${
-                        checked
-                          ? 'bg-blue-50 border-blue-300 text-blue-900'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setSelectedPutawayEpcs((prev) =>
-                            checked ? prev.filter((e) => e !== t.epc) : [...prev, t.epc]
-                          )
-                        }
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-mono font-semibold truncate">{t.epc}</p>
-                        <p className="text-[10px] text-slate-500 truncate">
-                          {t.sku || t.product_name || 'Tag ENCODED'}
-                        </p>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
+                {allPutawayCandidates.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {allPutawayCandidates.map((item) => {
+                      const checked = selectedPutawayEpcs.includes(item.code);
+                      return (
+                        <label
+                          key={item.key}
+                          className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition ${
+                            checked
+                              ? 'bg-blue-50 border-blue-300 text-blue-900'
+                              : item.isBox
+                              ? 'bg-indigo-50/40 border-indigo-200 text-slate-800 hover:border-indigo-300'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedPutawayEpcs((prev) =>
+                                checked ? prev.filter((e) => e !== item.code) : [...prev, item.code]
+                              )
+                            }
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="font-mono font-semibold truncate">{item.label}</p>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                  item.isBox
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {item.badge}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 truncate">{item.sublabel}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             );
           })()}
 
@@ -1093,8 +1216,8 @@ export default function InventoryLedgerPage({
               onChange={(e) => setEpcCode(e.target.value)}
               placeholder={
                 selectedPutawayEpcs.length > 0
-                  ? `${selectedPutawayEpcs.length} EPC terpilih (opsional tambah manual)`
-                  : 'Kode EPC Tag RFID (bisa pisah koma)'
+                  ? `${selectedPutawayEpcs.length} Tag/Box terpilih (opsional tambah manual)`
+                  : 'Kode EPC Tag / Master EPC Box / Kode Box (bisa pisah koma)'
               }
               className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
             />

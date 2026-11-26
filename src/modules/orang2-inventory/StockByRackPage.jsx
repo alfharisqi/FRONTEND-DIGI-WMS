@@ -105,6 +105,32 @@ export default function StockByRackPage({
         ),
       },
       {
+        id: 'packaging',
+        header: 'Rincian Kemasan',
+        cell: ({ row }) => {
+          const boxCount = Number(row.original.box_count || 0);
+          const boxQty = Number(row.original.box_quantity || 0);
+          const unitQty = Number(row.original.unit_quantity || 0);
+          return (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {boxCount > 0 && (
+                <Badge variant="secondary" className="font-mono">
+                  📦 {boxCount} Box ({formatNumber(boxQty)} unit)
+                </Badge>
+              )}
+              {unitQty > 0 && (
+                <Badge variant="outline" className="font-mono">
+                  🏷️ {formatNumber(unitQty)} Satuan
+                </Badge>
+              )}
+              {boxCount === 0 && unitQty === 0 && (
+                <span className="text-muted-foreground">-</span>
+              )}
+            </div>
+          );
+        },
+      },
+      {
         accessorKey: 'quantity',
         header: 'Jumlah Stok',
         accessorFn: (row) => Number(row.quantity || 0),
