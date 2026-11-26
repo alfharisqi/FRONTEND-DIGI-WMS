@@ -20,6 +20,7 @@ export default function InventoryLedgerPage({
   const [ledger, setLedger] = useState([]);
   const [localSearch, setLocalSearch] = useState('');
   const [showRackModal, setShowRackModal] = useState(false);
+  const [selectedRackId, setSelectedRackId] = useState(null);
   const [isSavingRack, setIsSavingRack] = useState(false);
   const [rackForm, setRackForm] = useState({
     code: '',
@@ -872,9 +873,11 @@ export default function InventoryLedgerPage({
                   : 'bg-blue-600';
 
             return (
-              <div
+              <button
+                type="button"
                 key={loc.id}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all"
+                onClick={() => setSelectedRackId(loc.id)}
+                className="text-left bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all group cursor-pointer"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="font-mono font-bold text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
@@ -884,7 +887,7 @@ export default function InventoryLedgerPage({
                     {status}
                   </span>
                 </div>
-                <h4 className="font-bold text-slate-900 mt-3 text-base">
+                <h4 className="font-bold text-slate-900 mt-3 text-base group-hover:text-blue-700 transition-colors">
                   {loc.name}
                 </h4>
                 <p className="text-xs text-slate-500 mt-1">
@@ -905,84 +908,16 @@ export default function InventoryLedgerPage({
                   </div>
                 </div>
 
-                {/* Ringkasan Kemasan Box & Tag Satuan di Rak */}
-                <div className="mt-3 pt-3 border-t border-slate-100 space-y-2">
-                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                    <span className="px-2 py-0.5 rounded-md font-semibold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      📦 {Number(loc.box_count || 0)} Box ({Number(loc.box_units_count || 0)} unit)
-                    </span>
-                    <span className="px-2 py-0.5 rounded-md font-semibold bg-slate-100 text-slate-700 border border-slate-200">
-                      🏷️ {Number(loc.unit_items_count || 0)} Tag Satuan
-                    </span>
-                  </div>
-
-                  {Array.isArray(loc.products_summary) && loc.products_summary.length > 0 ? (
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Isi Produk & Box di Rak:
-                      </p>
-                      <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
-                        {loc.products_summary.map((prod) => (
-                          <div
-                            key={prod.product_id || prod.sku}
-                            className="text-[11px] bg-slate-50 border border-slate-100 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2"
-                          >
-                            <div className="min-w-0">
-                              <p className="font-semibold text-slate-800 truncate">
-                                {prod.product_name}
-                              </p>
-                              <p className="text-[10px] font-mono text-slate-500">
-                                {prod.sku}
-                                {Number(prod.box_count) > 0
-                                  ? ` · ${prod.box_count} Box (${prod.box_qty}u)`
-                                  : ''}
-                                {Number(prod.unit_qty) > 0
-                                  ? ` · ${prod.unit_qty} Pcs`
-                                  : ''}
-                              </p>
-                            </div>
-                            <span className="font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded shrink-0">
-                              {prod.total_qty} unit
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <p className="text-[11px] text-slate-400 italic">
-                      Belum ada barang/box di rak ini.
-                    </p>
-                  )}
-
-                  {Array.isArray(loc.boxes) && loc.boxes.length > 0 && (
-                    <details className="text-[11px] group">
-                      <summary className="cursor-pointer font-semibold text-indigo-600 hover:text-indigo-800 select-none">
-                        Lihat Daftar Box ({loc.boxes.length} Box)
-                      </summary>
-                      <div className="mt-1.5 max-h-32 overflow-y-auto space-y-1 bg-indigo-50/40 p-2 rounded-lg border border-indigo-100">
-                        {loc.boxes.map((bx) => (
-                          <div
-                            key={bx.id || bx.box_code}
-                            className="flex items-center justify-between gap-2 bg-white px-2 py-1 rounded border border-slate-200 text-[10px]"
-                          >
-                            <div className="min-w-0">
-                              <span className="font-mono font-bold text-indigo-700">
-                                {bx.box_code}
-                              </span>
-                              <span className="ml-1 text-slate-500 truncate">
-                                · {bx.product_name}
-                              </span>
-                            </div>
-                            <span className="font-semibold text-slate-700 shrink-0">
-                              {bx.qty_per_box} u
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </details>
-                  )}
+                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>
+                    📦 <strong className="text-slate-700">{Number(loc.box_count || 0)}</strong> Box · 🏷️{' '}
+                    <strong className="text-slate-700">{Number(loc.unit_items_count || 0)}</strong> Tag
+                  </span>
+                  <span className="font-semibold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+                    Lihat Isi →
+                  </span>
                 </div>
-              </div>
+              </button>
             );
           })}
 
@@ -995,6 +930,195 @@ export default function InventoryLedgerPage({
             </div>
           )}
         </div>
+
+        {/* Modal Detail Isi Rak (Muncul saat kartu rak diklik) */}
+        {(() => {
+          const activeRack = rackLocations.find((r) => r.id === selectedRackId);
+          if (!activeRack) return null;
+
+          const capacity = Number(activeRack.max_capacity || 0);
+          const occupied = Number(activeRack.current_items_count || 0);
+          const pct = capacity > 0 ? Math.min(100, Math.round((occupied / capacity) * 100)) : 0;
+          const productsSummary = Array.isArray(activeRack.products_summary) ? activeRack.products_summary : [];
+          const rackBoxes = Array.isArray(activeRack.boxes) ? activeRack.boxes : [];
+          const rackUnitTags = allTags.filter(
+            (t) =>
+              String(t.location_id || '') === String(activeRack.id) &&
+              ['IN_STOCK', 'RESERVED', 'AUTHORIZED_OUT'].includes(String(t.status || '').toUpperCase())
+          );
+
+          return (
+            <div
+              onClick={() => setSelectedRackId(null)}
+              className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="bg-white w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl p-6 shadow-2xl border border-slate-200 space-y-5"
+              >
+                <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono font-bold text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
+                        {activeRack.code}
+                      </span>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700">
+                        Zona: {activeRack.zone_code}
+                      </span>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {activeRack.capacity_status || 'Longgar'}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 mt-2">
+                      {activeRack.name}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRackId(null)}
+                    className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2"
+                    aria-label="Tutup detail rak"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                {/* Ringkasan Angka */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <p className="text-[11px] text-slate-500 font-medium">Total Terisi</p>
+                    <p className="text-base font-bold text-slate-900 mt-0.5">
+                      {occupied} / {capacity} <span className="text-xs font-normal text-slate-500">({pct}%)</span>
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200">
+                    <p className="text-[11px] text-indigo-700 font-medium">Kemasan Box</p>
+                    <p className="text-base font-bold text-indigo-900 mt-0.5">
+                      {Number(activeRack.box_count || 0)} Box{' '}
+                      <span className="text-xs font-normal text-indigo-700">
+                        ({Number(activeRack.box_units_count || 0)} unit)
+                      </span>
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200">
+                    <p className="text-[11px] text-blue-700 font-medium">Tag RFID Satuan</p>
+                    <p className="text-base font-bold text-blue-900 mt-0.5">
+                      {Number(activeRack.unit_items_count || 0)} Tag
+                    </p>
+                  </div>
+                </div>
+
+                {/* Daftar Produk di Rak */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Ringkasan Produk di Rak ({productsSummary.length} SKU)
+                  </h4>
+                  {productsSummary.length > 0 ? (
+                    <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                      {productsSummary.map((prod) => (
+                        <div
+                          key={prod.product_id || prod.sku}
+                          className="px-4 py-2.5 bg-white flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">{prod.product_name}</p>
+                            <p className="font-mono text-[11px] text-slate-500">
+                              {prod.sku}
+                              {Number(prod.box_count) > 0
+                                ? ` · 📦 ${prod.box_count} Box (${prod.box_qty} unit)`
+                                : ''}
+                              {Number(prod.unit_qty) > 0
+                                ? ` · 🏷️ ${prod.unit_qty} Tag Satuan`
+                                : ''}
+                            </p>
+                          </div>
+                          <span className="font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg shrink-0">
+                            {prod.total_qty} unit
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                      Rak ini masih kosong (belum ada box maupun tag satuan).
+                    </div>
+                  )}
+                </div>
+
+                {/* Daftar Box di Rak */}
+                {rackBoxes.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Daftar Box di Rak Ini ({rackBoxes.length} Box)
+                    </h4>
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                      {rackBoxes.map((bx) => (
+                        <div
+                          key={bx.id || bx.box_code}
+                          className="px-4 py-2 bg-white flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-mono font-bold text-indigo-700">
+                                {bx.box_code}
+                              </span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                {bx.box_level === 'MASTER' ? 'MASTER BOX' : 'INNER BOX'}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                              {bx.product_name} ({bx.sku}) · EPC: <span className="font-mono">{bx.master_epc}</span>
+                            </p>
+                          </div>
+                          <span className="font-semibold text-slate-800 bg-slate-100 px-2.5 py-1 rounded-lg shrink-0">
+                            {bx.qty_per_box} unit
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Daftar Tag RFID Satuan di Rak */}
+                {rackUnitTags.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Daftar Tag RFID Satuan di Rak Ini ({rackUnitTags.length} Tag)
+                    </h4>
+                    <div className="max-h-44 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                      {rackUnitTags.map((tg) => (
+                        <div
+                          key={tg.id || tg.epc}
+                          className="px-4 py-2 bg-white flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-mono font-semibold text-slate-800">{tg.epc}</p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              {tg.product_name || '-'} ({tg.sku || '-'})
+                            </p>
+                          </div>
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+                            {tg.status}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRackId(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Modal Tambah Rak */}
         {showRackModal && (
