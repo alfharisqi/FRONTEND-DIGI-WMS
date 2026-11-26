@@ -507,8 +507,11 @@ useEffect(() => {
   });
 
   return () => {
+    const wasConnected = client.connected;
     client.end(true);
-    console.log('[POS MQTT] Koneksi ditutup.');
+    if (wasConnected) {
+      console.log('[POS MQTT] Koneksi ditutup.');
+    }
   };
 }, []);
 
@@ -1522,10 +1525,21 @@ const handleCheckout = async () => {
                     <div className="flex justify-between items-start gap-3">
                       <div>
                         <p className="font-bold text-slate-800">
-                          {item.sku}
+                          {item.product_name || item.sku}
+                          {item.product_name && (
+                            <span className="ml-2 text-xs font-mono font-normal text-slate-500">
+                              ({item.sku})
+                            </span>
+                          )}
                         </p>
                         <p className="text-xs text-slate-500 mt-1">
                           EPC: {item.epc}
+                          {Math.abs(Number(item.qty_change || 1)) > 1 && (
+                            <span className="ml-2 font-semibold text-slate-700">
+                              · {Math.abs(Number(item.qty_change))} unit
+                              {item.box_code ? ` (${item.box_code})` : ''}
+                            </span>
+                          )}
                         </p>
                       </div>
 
