@@ -1697,7 +1697,23 @@ export default function InventoryLedgerPage({
                   {(() => {
                     const tagsByEpc = new Map(allTags.map(tag => [tag.epc, tag]));
                     const shippableTags = shippingSource?.source.type === 'STOK_BEBAS'
-                      ? allTags.filter(tag => tag.status === 'IN_STOCK')
+                      ? [
+                          ...allBoxes
+                            .filter(b => b.status === 'IN_RACK')
+                            .map(b => ({
+                              id: b.id,
+                              epc: b.master_epc,
+                              displayCode: `${b.box_code} (${b.product_name || b.sku} · ${b.qty_per_box}u)`,
+                              status: 'BOX IN_RACK',
+                              isBox: true,
+                            })),
+                          ...allTags
+                            .filter(tag => tag.status === 'IN_STOCK')
+                            .map(tag => ({
+                              ...tag,
+                              displayCode: `${tag.epc}${tag.product_name ? ` (${tag.product_name})` : ''}`,
+                            })),
+                        ]
                       : (shippingSource?.epcs ?? []).map(epc => tagsByEpc.get(epc) ?? { epc });
                     const currentEpcs = shipForm.epcs
                       .split(/[\n,;]+/)
@@ -1757,7 +1773,7 @@ export default function InventoryLedgerPage({
                                       className="rounded border-slate-300 text-blue-600"
                                     />
                                     <span className="font-mono font-semibold text-slate-800 truncate">
-                                      {t.epc}
+                                      {t.displayCode || t.epc}
                                     </span>
                                   </div>
                                   <span

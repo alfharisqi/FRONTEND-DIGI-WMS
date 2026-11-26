@@ -146,7 +146,7 @@ function ScanHistory({ lines }) {
   );
 }
 
-function CandidateChecklist({ lines, loaded, selected, setSelected, disabled }) {
+function CandidateChecklist({ lines, loaded, selected, setSelected, disabled, rackBoxes = [], onUnpackBox, unpackingBoxId }) {
   const candidates = lines.flatMap(line => line.candidates ?? []);
   return (
     <section className="space-y-2" aria-labelledby="picking-candidates">
@@ -160,37 +160,67 @@ function CandidateChecklist({ lines, loaded, selected, setSelected, disabled }) 
         </div>
       </div>
       <p className="text-xs text-slate-600">Pilih EPC dari data sistem untuk simulasi Picking.</p>
-      {lines.filter(line => line.remaining_qty > 0).map(line => (
-        <fieldset className="space-y-1.5" key={line.product_id} disabled={disabled}>
-          <legend className="text-sm font-semibold">{line.sku} · {line.product_name}</legend>
-          <RackList locations={line.locations} />
-          <p className="text-xs text-slate-600">
-            Sisa kebutuhan {line.remaining_qty} unit · Stok tersedia {line.available_qty} unit
-            {loaded && ` · ${line.candidates.length} EPC ditampilkan`}
-          </p>
-          {line.shortage_qty > 0 && (
-            <p className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
-              Kekurangan stok {line.shortage_qty} unit. Lanjutkan Picking setelah stok tersedia.
+      {lines.filter(line => line.remaining_qty > 0).map(line => {
+        const lineBoxes = rackBoxes.filter(
+          b => b.status === 'IN_RACK' && (String(b.product_id) === String(line.product_id) || b.sku === line.sku)
+        );
+        return (
+          <fieldset className="space-y-1.5" key={line.product_id} disabled={disabled}>
+            <legend className="text-sm font-semibold">{line.sku} · {line.product_name}</legend>
+            <RackList locations={line.locations} />
+            <p className="text-xs text-slate-600">
+              Sisa kebutuhan {line.remaining_qty} unit · Stok tersedia {line.available_qty} unit
+              {loaded && ` · ${line.candidates.length} EPC ditampilkan`}
             </p>
-          )}
-          {line.candidates?.length ? (
-            <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
-              {line.candidates.map(candidate => (
-                <label className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 rounded-lg p-2 text-xs hover:bg-white focus-within:bg-white" key={candidate.epc}>
-                  <input type="checkbox" checked={selected.includes(candidate.epc)}
-                    onChange={event => {
-                      const checked = event.target.checked;
-                      setSelected(previous => checked ? [...previous, candidate.epc] : previous.filter(epc => epc !== candidate.epc));
-                    }} />
-                  <code className="break-all font-semibold text-slate-800">{candidate.epc}</code>
-                  <span>{candidate.location_code} · {candidate.location_name}</span>
-                  <span className="ml-auto rounded bg-slate-200 px-1.5 py-0.5 font-semibold text-slate-700">{candidate.tag_status}</span>
-                </label>
-              ))}
-            </div>
-          ) : loaded && <p className="text-xs text-slate-500">Belum ada EPC yang memenuhi syarat Picking untuk SKU ini.</p>}
-        </fieldset>
-      ))}
+            {line.shortage_qty > 0 && (
+              <p className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+                Kekurangan stok {line.shortage_qty} unit. Lanjutkan Picking setelah stok tersedia.
+              </p>
+            )}
+            {lineBoxes.length > 0 && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-2.5 space-y-1.5">
+                <p className="text-[11px] font-semibold text-indigo-900">
+                  📦 Tersedia {lineBoxes.length} Box di Rak untuk SKU ini (pecah ke Tag Satuan untuk langsung diambil):
+                </p>
+                <div className="space-y-1">
+                  {lineBoxes.map(bx => (
+                    <div key={bx.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 border border-indigo-100 text-xs">
+                      <div>
+                        <span className="font-mono font-bold text-indigo-700">{bx.box_code}</span>
+                        <span className="text-slate-600"> · {bx.qty_per_box} unit · Rak {bx.location_code || '-'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={disabled || unpackingBoxId === bx.id}
+                        onClick={() => onUnpackBox?.(bx)}
+                        className="rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-semibold disabled:opacity-50"
+                      >
+                        {unpackingBoxId === bx.id ? 'Memecah Box...' : 'Pecah Box & Ambil EPC'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {line.candidates?.length ? (
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+                {line.candidates.map(candidate => (
+                  <label className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 rounded-lg p-2 text-xs hover:bg-white focus-within:bg-white" key={candidate.epc}>
+                    <input type="checkbox" checked={selected.includes(candidate.epc)}
+                      onChange={event => {
+                        const checked = event.target.checked;
+                        setSelected(previous => checked ? [...previous, candidate.epc] : previous.filter(epc => epc !== candidate.epc));
+                      }} />
+                    <code className="break-all font-semibold text-slate-800">{candidate.epc}</code>
+                    <span>{candidate.location_code} · {candidate.location_name}</span>
+                    <span className="ml-auto rounded bg-slate-200 px-1.5 py-0.5 font-semibold text-slate-700">{candidate.tag_status}</span>
+                  </label>
+                ))}
+              </div>
+            ) : loaded && <p className="text-xs text-slate-500">Belum ada EPC yang memenuhi syarat Picking untuk SKU ini.</p>}
+          </fieldset>
+        );
+      })}
       {lines.length > 0 && !lines.some(line => line.remaining_qty > 0) && <p className="text-xs text-slate-500">Seluruh kebutuhan Picking telah terpenuhi.</p>}
     </section>
   );
@@ -204,6 +234,8 @@ function OrderDialog({ order, close, onScan, onReload, needsReload, notify }) {
   const [selection, setSelection] = useState([]);
   const [candidates, setCandidates] = useState({ lines: null, loading: true, error: '' });
   const [batchProgress, setBatchProgress] = useState(null);
+  const [rackBoxes, setRackBoxes] = useState([]);
+  const [unpackingBoxId, setUnpackingBoxId] = useState(null);
   const ready = !['MENUNGGU_PICKING', 'SEDANG_DIAMBIL'].includes(order.status);
   useEffect(() => {
     const trigger = document.activeElement;
@@ -215,11 +247,21 @@ function OrderDialog({ order, close, onScan, onReload, needsReload, notify }) {
     };
   }, []);
 
+  const refreshRackBoxes = useCallback(async () => {
+    try {
+      const boxes = await inboundRequest('/boxes');
+      if (Array.isArray(boxes)) setRackBoxes(boxes);
+    } catch {
+      // Abaikan jika endpoint boxes belum tersedia pada mock test
+    }
+  }, []);
+
   const refreshCandidates = useCallback(async () => {
     candidateRequest.current?.abort();
     const controller = new AbortController();
     candidateRequest.current = controller;
     setCandidates({ lines: null, loading: true, error: '' });
+    void refreshRackBoxes();
     try {
       const data = await pickingRequest(`/orders/${order.id}/available-epcs`, { signal: controller.signal });
       if (controller.signal.aborted) return;
@@ -230,7 +272,24 @@ function OrderDialog({ order, close, onScan, onReload, needsReload, notify }) {
     } catch (error) {
       if (!controller.signal.aborted) setCandidates({ lines: null, loading: false, error: error.message });
     }
-  }, [order.id]);
+  }, [order.id, refreshRackBoxes]);
+
+  async function handleUnpackBoxInPicking(bx) {
+    if (!bx?.id || unpackingBoxId) return;
+    setUnpackingBoxId(bx.id);
+    try {
+      await inboundRequest(`/boxes/${bx.id}/unpack`, {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'TO_UNIT' }),
+      });
+      notify?.(`Box ${bx.box_code} berhasil dipecah menjadi ${bx.qty_per_box} Tag RFID satuan di rak ${bx.location_code || ''}!`, 'success');
+      await refreshPicking();
+    } catch (err) {
+      notify?.(err.message || 'Gagal memecah Box.', 'error');
+    } finally {
+      setUnpackingBoxId(null);
+    }
+  }
 
   useEffect(() => {
     if (!ready) void refreshCandidates();
@@ -297,7 +356,10 @@ function OrderDialog({ order, close, onScan, onReload, needsReload, notify }) {
             {candidates.error && <p role="alert" className="text-sm text-red-800">{candidates.error}</p>}
             <CandidateChecklist lines={candidates.lines ?? order.lines} loaded={candidates.lines !== null}
               selected={selection} setSelected={setSelection}
-              disabled={busy || needsReload || candidates.loading} />
+              disabled={busy || needsReload || candidates.loading}
+              rackBoxes={rackBoxes}
+              onUnpackBox={handleUnpackBoxInPicking}
+              unpackingBoxId={unpackingBoxId} />
             <p className="text-xs text-slate-600" aria-live="polite">{selection.length} EPC dipilih</p>
             <button type="button" className={primary} disabled={busy || needsReload || candidates.loading || !selection.length}
               onClick={() => submit(selection)}>
