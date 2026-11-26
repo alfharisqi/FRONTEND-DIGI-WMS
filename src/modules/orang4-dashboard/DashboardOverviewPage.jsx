@@ -98,15 +98,22 @@ export default function DashboardOverviewPage({
       const ledgerMap = new Map();
       if (Array.isArray(stockJson?.data)) {
         stockJson.data.forEach((row) => {
-          ledgerMap.set(row.sku, Number(row.current_stock ?? 0));
+          ledgerMap.set(row.sku, row);
         });
       }
 
-      const mergedProducts = (prodJson.data || []).map((p) => ({
-        ...p,
-        current_stock: ledgerMap.has(p.sku) ? ledgerMap.get(p.sku) : Number(p.current_stock ?? 0),
-        min_stock: Number(p.min_stock ?? p.min_stock_threshold ?? p.min_stock_alert ?? 20),
-      }));
+      const mergedProducts = (prodJson.data || []).map((p) => {
+        const s = ledgerMap.get(p.sku);
+        return {
+          ...p,
+          current_stock: s ? Number(s.current_stock ?? 0) : Number(p.current_stock ?? 0),
+          in_rack_stock: s ? Number(s.in_rack_stock ?? 0) : Number(p.current_stock ?? 0),
+          staging_stock: s ? Number(s.staging_stock ?? 0) : 0,
+          reserved_stock: s ? Number(s.reserved_stock ?? 0) : 0,
+          stock_status: s?.stock_status,
+          min_stock: Number(p.min_stock ?? p.min_stock_threshold ?? p.min_stock_alert ?? 20),
+        };
+      });
 
       setSummary(sumJson.data);
       setProducts(mergedProducts);
@@ -341,12 +348,13 @@ export default function DashboardOverviewPage({
     lines.push(`Tanggal Unduh,${new Date().toLocaleString('id-ID')}`);
     lines.push(`Dicetak Oleh,${currentUser?.full_name} (${currentUser?.role})`);
     lines.push('');
-    lines.push('--- DAFTAR STOK PRODUK GUDANG (IMMUTABLE LEDGER) ---');
-    lines.push('SKU,Nama Barang,Kategori,Stok Saat Ini,Batas Minimum,Status');
+    lines.push('--- DAFTAR STOK PRODUK GUDANG (KONSISTENSI RAK & LEDGER) ---');
+    lines.push('SKU,Nama Barang,Kategori,Siap di Rak,Staging,Saldo Ledger,Batas Minimum,Status');
     products.forEach((p) => {
-      const isLow = Number(p.current_stock) <= Number(p.min_stock || 15);
+      const rackQty = Number(p.in_rack_stock ?? p.current_stock ?? 0);
+      const isLow = p.stock_status ? p.stock_status === 'STOK_RENDAH' : rackQty <= Number(p.min_stock || 15);
       lines.push(
-        `"${p.sku}","${p.name}","${p.category}",${p.current_stock},${p.min_stock || 15},"${
+        `"${p.sku}","${p.name}","${p.category}",${rackQty},${Number(p.staging_stock || 0)},${p.current_stock},${p.min_stock || 15},"${
           isLow ? 'STOK RENDAH' : 'AMAN'
         }"`
       );
@@ -400,8 +408,10 @@ export default function DashboardOverviewPage({
     ...chartSeries.map((d) => Math.max(d.inbound || 0, d.outbound || 0, d.opname || 0))
   );
 
-  const lowStockItems = products.filter(
-    (p) => Number(p.current_stock) <= Number(p.min_stock || 20)
+  const lowStockItems = products.filter((p) =>
+    p.stock_status
+      ? p.stock_status === 'STOK_RENDAH'
+      : Number(p.in_rack_stock ?? p.current_stock) <= Number(p.min_stock || 20)
   );
 
   // ============================================================================
@@ -485,16 +495,16 @@ export default function DashboardOverviewPage({
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-sm font-medium">
-                    Total Stok Fisik
+                    Stok Siap di Rak
                   </CardTitle>
                   <Package className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {kpis.totalPhysicalStock}
+                    {kpis.totalInRackStock ?? kpis.totalPhysicalStock}
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {kpis.totalSkus} SKU terverifikasi di ledger
+                    {kpis.totalSkus} SKU · {kpis.totalStagingStock ?? 0} staging · Ledger: {kpis.totalLedgerStock ?? kpis.totalPhysicalStock}
                   </p>
                 </CardContent>
               </Card>
@@ -809,7 +819,7 @@ export default function DashboardOverviewPage({
                             <td className="px-4 py-3 text-muted-foreground">{item.category}</td>
                             <td className="px-4 py-3 text-right">
                               <Badge variant="destructive">
-                                {item.current_stock} / {item.min_stock || 20} unit
+                                {item.in_rack_stock ?? item.current_stock} / {item.min_stock || 20} unit
                               </Badge>
                             </td>
                           </tr>
