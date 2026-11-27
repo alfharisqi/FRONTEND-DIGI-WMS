@@ -98,6 +98,19 @@ export default function App() {
   const roleUpper = String(currentUser?.role || '').toUpperCase();
   const isAdminOrSupervisor =
     roleUpper.includes('ADMIN') || roleUpper.includes('SUPERVISOR');
+  const isSecurityReadOnly = roleUpper === 'SECURITY';
+  const readOnlyTabs = [
+    'penerimaan',
+    'stok',
+    'penyimpanan',
+    'picking',
+    'pengiriman',
+    'pos',
+    'retur',
+    'rfid-tag',
+    'master-box',
+    'rfid-opname',
+  ];
 
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [healthData, setHealthData] = useState(null);
@@ -526,15 +539,17 @@ export default function App() {
               </Button>
             </div>
 
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setShowQuickAddModal(true)}
-              className="hidden xl:inline-flex h-8 text-xs gap-1.5"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Tambah SKU</span>
-            </Button>
+            {!isSecurityReadOnly && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setShowQuickAddModal(true)}
+                className="hidden xl:inline-flex h-8 text-xs gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Tambah SKU</span>
+              </Button>
+            )}
 
             <Button
               type="button"
@@ -567,7 +582,19 @@ export default function App() {
           data-tour="main-content-area"
           className="shadcn-module-scope flex-1 overflow-y-auto px-4 py-6 sm:px-6 custom-scrollbar"
         >
-          <div className="mx-auto w-full max-w-7xl">{renderMainContent()}</div>
+          <div className="mx-auto w-full max-w-7xl">
+            {isSecurityReadOnly && readOnlyTabs.includes(activeTab) && (
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+                <span>
+                  <strong>Mode Lihat (Read-Only · Role SECURITY):</strong> Anda dapat memantau data pada halaman ini, namun perubahan/mutasi operasional hanya dapat dilakukan oleh Staff Gudang, Admin, atau Supervisor.
+                </span>
+                <Badge variant="outline" className="border-amber-400 text-amber-800 shrink-0">
+                  Read-Only
+                </Badge>
+              </div>
+            )}
+            {renderMainContent()}
+          </div>
         </main>
       </div>
 

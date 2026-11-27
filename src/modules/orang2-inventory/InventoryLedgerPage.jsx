@@ -22,6 +22,7 @@ export default function InventoryLedgerPage({
   const [showRackModal, setShowRackModal] = useState(false);
   const [selectedRackId, setSelectedRackId] = useState(null);
   const [editingRack, setEditingRack] = useState(null);
+  const [deleteRackTarget, setDeleteRackTarget] = useState(null);
   const [rackActionBusy, setRackActionBusy] = useState(false);
   const [isSavingRack, setIsSavingRack] = useState(false);
   const [rackForm, setRackForm] = useState({
@@ -286,7 +287,6 @@ export default function InventoryLedgerPage({
 
   const handleDeleteRack = async (rack) => {
     if (!rack?.id || rackActionBusy) return;
-    if (!window.confirm(`Hapus Rak ${rack.code} (${rack.name})?`)) return;
     setRackActionBusy(true);
     try {
       const res = await fetch(`${API_BASE_URL}/locations/${encodeURIComponent(rack.id)}`, {
@@ -295,6 +295,7 @@ export default function InventoryLedgerPage({
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.message || 'Gagal menghapus rak.');
       showNotification?.(json.message || `Rak ${rack.code} berhasil dihapus.`, 'success');
+      setDeleteRackTarget(null);
       setSelectedRackId(null);
       setEditingRack(null);
       await fetchInventoryData();
@@ -1092,7 +1093,7 @@ export default function InventoryLedgerPage({
                       <button
                         type="button"
                         disabled={rackActionBusy}
-                        onClick={() => handleDeleteRack(activeRack)}
+                        onClick={() => setDeleteRackTarget(activeRack)}
                         className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition"
                       >
                         🗑️ Hapus Rak
@@ -1379,6 +1380,51 @@ export default function InventoryLedgerPage({
             </div>
           );
         })()}
+
+        {/* Modal Konfirmasi Hapus Rak Kosong */}
+        {deleteRackTarget && (
+          <div
+            onClick={() => !rackActionBusy && setDeleteRackTarget(null)}
+            className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-200 space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0 text-lg">
+                  🗑️
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Hapus Rak {deleteRackTarget.code}?
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Rak <strong>{deleteRackTarget.name}</strong> (Zona {deleteRackTarget.zone_code}) saat ini kosong (`0` unit) dan akan dihapus permanen dari daftar lokasi gudang.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={rackActionBusy}
+                  onClick={() => setDeleteRackTarget(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={rackActionBusy}
+                  onClick={() => handleDeleteRack(deleteRackTarget)}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                >
+                  {rackActionBusy ? 'Menghapus...' : 'Ya, Hapus Rak'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal Tambah Rak */}
         {showRackModal && (
