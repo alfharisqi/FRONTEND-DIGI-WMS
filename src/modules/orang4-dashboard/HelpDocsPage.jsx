@@ -178,12 +178,9 @@ export default function HelpDocsPage({ switchTab }) {
             <BookOpen className="h-4 w-4" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-2xl font-bold tracking-tight">
-                Dokumentasi & Panduan DIGI WMS
-              </h2>
-              <Badge variant="outline">v2.0 Lengkap</Badge>
-            </div>
+            <h2 className="text-2xl font-bold tracking-tight">
+              Dokumentasi & Panduan DIGI WMS
+            </h2>
             <p className="text-sm text-muted-foreground mt-0.5">
               Pusat dokumentasi SOP operasional gudang, siklus RFID UHF Gen2, Master Box, Kasir POS, dan referensi teknis.
             </p>
