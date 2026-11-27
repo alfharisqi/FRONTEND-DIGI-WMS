@@ -25,6 +25,66 @@ import {
   YAxis,
 } from 'recharts';
 import { API_BASE_URL } from '../../config/api';
+
+const ACTION_LABELS = {
+  USER_LOGIN: 'Masuk Sistem',
+  USER_LOGOUT: 'Keluar Sistem',
+  CREATE_USER: 'Tambah Pengguna',
+  UPDATE_USER: 'Ubah Pengguna',
+  DELETE_USER: 'Hapus Pengguna',
+  UPDATE_SETTINGS: 'Ubah Pengaturan',
+  CREATE_PRODUCT: 'Tambah Produk',
+  UPDATE_PRODUCT: 'Ubah Produk',
+  DELETE_PRODUCT: 'Hapus Produk',
+  CREATE_GRN: 'Catat Penerimaan',
+  UPDATE_GRN: 'Ubah Penerimaan',
+  VERIFY_GRN: 'Verifikasi Penerimaan',
+  CANCEL_GRN: 'Batal Penerimaan',
+  ENCODE_RFID_TAG: 'Daftar Tag RFID',
+  UPDATE_RFID_TAG: 'Ubah Tag RFID',
+  DEACTIVATE_RFID_TAG: 'Tag RFID Rusak',
+  REPLACE_RFID_TAG: 'Ganti Tag RFID',
+  RECEIVE_BOX: 'Terima Box',
+  PUTAWAY_BOX: 'Simpan Box ke Rak',
+  BREAK_PACK_BOX: 'Pecah Kemasan Box',
+  PUTAWAY_RACK: 'Simpan ke Rak',
+  CREATE_SHIPMENT: 'Buat Pengiriman',
+  AUTHORIZE_OUTBOUND: 'Izin Keluar Barang',
+  OUTBOUND_HANDOFF: 'Serah Terima Keluar',
+  CREATE_PICKING_ORDER: 'Buat Order Picking',
+  PICKING_SCAN: 'Scan Ambil Barang',
+  UPDATE_PACKING: 'Selesai Packing',
+  POS_CHECKOUT: 'Transaksi Kasir',
+  POS_RETURN: 'Retur Barang',
+  START_OPNAME: 'Mulai Stock Opname',
+  SUBMIT_OPNAME_SCAN: 'Kirim Scan Opname',
+  APPROVE_OPNAME: 'Setujui Opname',
+  GENERATE_GATE_PASS: 'Buat Gate Pass',
+  GATE_SCAN_OUT: 'Keluar Gerbang',
+  CANCEL_GATE_PASS: 'Batal Gate Pass',
+  SIMULATE_GATE_ALARM: 'Simulasi Alarm',
+};
+
+const getFriendlyActionLabel = (log) => {
+  if (log?.action_label) return log.action_label;
+  const key = String(log?.action || '').toUpperCase();
+  return (
+    ACTION_LABELS[key] ||
+    key
+      .replace(/_/g, ' ')
+      .toLowerCase()
+      .replace(/\b\w/g, (c) => c.toUpperCase()) ||
+    'Aktivitas'
+  );
+};
+
+const getFriendlyLogDetails = (log) => {
+  const raw = String(log?.details || '').trim();
+  if (!raw || raw.startsWith('{') || raw.startsWith('[')) {
+    return `${getFriendlyActionLabel(log)} oleh ${log?.actor_username || 'Pengguna'}`;
+  }
+  return raw;
+};
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -683,11 +743,11 @@ export default function DashboardOverviewPage({
                                   {actor}
                                 </p>
                                 <p className="text-xs text-muted-foreground truncate max-w-[210px]">
-                                  {log.details || log.action}
+                                  {getFriendlyLogDetails(log)}
                                 </p>
                               </div>
-                              <Badge variant="outline" className="text-[10px] font-mono shrink-0">
-                                {log.action}
+                              <Badge variant="outline" className="text-[10px] shrink-0">
+                                {getFriendlyActionLabel(log)}
                               </Badge>
                             </div>
                           </div>
@@ -1181,16 +1241,20 @@ export default function DashboardOverviewPage({
                 },
                 {
                   accessorKey: 'action',
-                  header: 'Aksi Sistem',
+                  header: 'Aktivitas',
                   cell: ({ row }) => (
-                    <span className="font-mono font-semibold">{row.original.action}</span>
+                    <Badge variant="outline" className="font-medium">
+                      {getFriendlyActionLabel(row.original)}
+                    </Badge>
                   ),
                 },
                 {
                   accessorKey: 'details',
-                  header: 'Detail Aktivitas',
+                  header: 'Keterangan',
                   cell: ({ row }) => (
-                    <span className="text-muted-foreground">{row.original.details}</span>
+                    <span className="text-muted-foreground">
+                      {getFriendlyLogDetails(row.original)}
+                    </span>
                   ),
                 },
               ]}
