@@ -503,7 +503,7 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
       <div className="space-y-6">
         <div
           data-tour="opname-gate-header"
-          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-card text-card-foreground p-6 rounded-2xl border border-border shadow-sm"
         >
           <div className="flex items-start gap-3">
             <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
@@ -525,7 +525,7 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
               value={selectedZone}
               onChange={(e) => setSelectedZone(e.target.value)}
               disabled={zonesLoading || opnameZones.length === 0 || scanning}
-              className="px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium focus:outline-none"
+              className="px-3.5 py-2.5 bg-muted/50 border border-border rounded-xl text-sm font-medium focus:outline-none"
             >
               {zonesLoading && <option value="">Memuat zona...</option>}
               {!zonesLoading && opnameZones.length === 0 && (
@@ -609,22 +609,22 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
 
 
 {/* Daftar Sesi Stock Opname */}
-<div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-  <div className="p-5 border-b border-slate-200">
-    <h3 className="font-bold text-slate-900">
+<div className="bg-card text-card-foreground rounded-2xl border border-border shadow-sm overflow-hidden">
+  <div className="p-5 border-b border-border">
+    <h3 className="font-bold text-foreground">
       Riwayat Sesi Stock Opname
     </h3>
-    <p className="text-xs text-slate-500 mt-1">
+    <p className="text-xs text-muted-foreground mt-1">
       Pilih sesi yang menunggu persetujuan supervisor.
     </p>
   </div>
 
-  <div className="divide-y divide-slate-100">
+  <div className="divide-y divide-border">
     {sessions.filter(
       (session) =>
         session.status === 'COMPLETED_PENDING_APPROVAL'
     ).length === 0 ? (
-      <div className="p-5 text-sm text-slate-500 text-center">
+      <div className="p-5 text-sm text-muted-foreground text-center">
         Tidak ada sesi yang menunggu persetujuan.
       </div>
     ) : (
@@ -639,16 +639,16 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
             className="p-4 flex flex-col sm:flex-row justify-between gap-3"
           >
             <div>
-              <p className="font-bold text-sm text-slate-900">
+              <p className="font-bold text-sm text-foreground">
                 {session.session_code}
               </p>
 
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 Zona {session.zone_code} ·{' '}
                 {new Date(session.created_at).toLocaleString('id-ID')}
               </p>
 
-              <p className="text-xs text-slate-600 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 Matched: {session.matched_count || 0} ·
                 Missing: {session.missing_count || 0} ·
                 Salah Zona: {session.misplaced_count || 0}
@@ -683,14 +683,14 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
         {/* Opname Discrepancy Results Table */}
         <div
           data-tour="opname-gate-main"
-          className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+          className="bg-card text-card-foreground rounded-2xl border border-border shadow-sm overflow-hidden"
         >
-          <div className="p-4 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="p-4 border-b border-border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
             <div>
-              <h3 className="font-bold text-slate-900 text-base">
+              <h3 className="font-bold text-foreground text-base">
                 Hasil Audit Selisih (Discrepancy Analysis)
               </h3>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-muted-foreground">
                 Perbandingan data sistem terhadap hasil pemindaian handheld terakhir.
               </p>
             </div>
@@ -811,7 +811,7 @@ if (selectedApprovalSession.status !== 'COMPLETED_PENDING_APPROVAL') {
     <div className="space-y-6">
       <div
         data-tour="opname-gate-header"
-        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+        className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-card text-card-foreground p-6 rounded-2xl border border-border shadow-sm"
       >
         <div className="flex items-start gap-3">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
