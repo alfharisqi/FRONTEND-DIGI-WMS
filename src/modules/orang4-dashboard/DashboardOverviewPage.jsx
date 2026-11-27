@@ -10,6 +10,11 @@ import {
   KeyRound,
   ArrowUpRight,
   Plus,
+  TrendingUp,
+  CheckCircle2,
+  Clock,
+  BarChart3,
+  Printer,
 } from 'lucide-react';
 import {
   Bar,
@@ -1391,7 +1396,7 @@ export default function DashboardOverviewPage({
   }
 
   // ============================================================================
-  // MENU 3: LAPORAN & ANALITIK GUDANG (Persis Template Awal digiwms.html)
+  // MENU 3: LAPORAN & ANALITIK GUDANG (Data Real Database + Shadcn Admin UI)
   // ============================================================================
   if (activeMenu === 'laporan') {
     const categories = summary?.categoryDistribution || [];
@@ -1399,95 +1404,128 @@ export default function DashboardOverviewPage({
       1,
       categories.reduce((acc, c) => acc + Number(c.stock || 0), 0)
     );
+    const analytics = summary?.analytics || {};
+    const turnoverRate = Number(analytics.turnoverRate ?? 0);
+    const outbound30dUnits = Number(analytics.outbound30dUnits ?? 0);
+    const opnameAccuracy = analytics.opnameAccuracy;
+    const totalOpnameSessions = Number(analytics.totalOpnameSessions ?? 0);
+    const avgPickingMinutes = analytics.avgPickingMinutes;
+    const completedPickingOrders = Number(analytics.completedPickingOrders ?? 0);
 
     return (
       <div className="space-y-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Laporan & Analitik Gudang</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Unduh laporan stok, turn-over rate, distribusi kategori, dan performa operasional gudang.
-            </p>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+              <BarChart3 className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight">Laporan & Analitik Gudang</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Metrik performa operasional real-time dari database, distribusi kategori, dan ekspor laporan.
+              </p>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleDownloadCsvReport}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
-            >
-              <span>📥</span>
-              <span>Export Laporan CSV (Excel)</span>
-            </button>
-            <button
-              onClick={() => window.print()}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all flex items-center space-x-2"
-            >
-              <span>🖨️</span>
-              <span>Cetak / Simpan PDF</span>
-            </button>
+            <Button type="button" size="sm" onClick={handleDownloadCsvReport}>
+              <Download className="h-4 w-4" />
+              Export Laporan CSV
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="h-4 w-4" />
+              Cetak / PDF
+            </Button>
           </div>
         </div>
 
-        {/* 3 Analytic Cards from digiwms.html */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900">Turnover Stok Bulanan</h3>
-              <span className="text-emerald-500 text-xl">📈</span>
-            </div>
-            <p className="text-3xl font-bold text-slate-900">4.2x</p>
-            <p className="text-xs text-emerald-600 mt-1 font-medium">
-              +0.5 lebih cepat dari rata-rata industri
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900">Akurasi Stok Opname RFID</h3>
-              <span className="text-blue-500 text-xl">✅</span>
-            </div>
-            <p className="text-3xl font-bold text-slate-900">99.4%</p>
-            <p className="text-xs text-blue-600 mt-1 font-medium">
-              Sangat akurat berdasarkan audit nirkabel
-            </p>
-          </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900">Waktu Proses Picking</h3>
-              <span className="text-purple-500 text-xl">⏱️</span>
-            </div>
-            <p className="text-3xl font-bold text-slate-900">12 Menit</p>
-            <p className="text-xs text-purple-600 mt-1 font-medium">
-              Rata-rata per order pesanan keluar
-            </p>
-          </div>
+        {/* 3 Real-Time Analytic Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Turnover Stok (30 Hari)</CardTitle>
+              <TrendingUp className="h-4 w-4 text-emerald-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{turnoverRate.toFixed(2)}x</div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {outbound30dUnits} unit keluar dalam 30 hari terakhir
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Akurasi Stock Opname RFID</CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-primary" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {opnameAccuracy !== null && opnameAccuracy !== undefined
+                  ? `${opnameAccuracy}%`
+                  : '—'}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {totalOpnameSessions > 0
+                  ? `Rata-rata dari ${totalOpnameSessions} sesi opname tercatat`
+                  : 'Belum ada sesi stock opname tercatat'}
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Waktu Proses Picking</CardTitle>
+              <Clock className="h-4 w-4 text-violet-500" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {avgPickingMinutes !== null && avgPickingMinutes !== undefined
+                  ? `${avgPickingMinutes} Menit`
+                  : '—'}
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                {completedPickingOrders > 0
+                  ? `Rata-rata dari ${completedPickingOrders} order picking selesai`
+                  : 'Belum ada order picking selesai'}
+              </p>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Distribusi Kategori Barang */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <h3 className="font-bold text-slate-900 text-base mb-4">
-            Distribusi Stok Berdasarkan Kategori Barang
-          </h3>
-          <div className="space-y-4">
-            {categories.map((cat, idx) => {
-              const pct = Math.round((Number(cat.stock || 0) / totalCatStock) * 100);
-              return (
-                <div key={idx}>
-                  <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                    <span>{cat.category}</span>
-                    <span>
-                      {cat.stock} Unit ({pct}%)
-                    </span>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Distribusi Stok Berdasarkan Kategori Barang</CardTitle>
+            <CardDescription>
+              Proporsi stok fisik siap di rak (In-Rack) per kategori produk.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {categories.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Belum ada data kategori stok.</p>
+            ) : (
+              categories.map((cat, idx) => {
+                const pct = Math.round((Number(cat.stock || 0) / totalCatStock) * 100);
+                return (
+                  <div key={idx}>
+                    <div className="flex justify-between text-xs font-semibold text-foreground mb-1.5">
+                      <span>{cat.category}</span>
+                      <span>
+                        {cat.stock} Unit ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-muted h-2.5 rounded-full overflow-hidden">
+                      <div
+                        style={{ width: `${Math.max(pct, Number(cat.stock || 0) > 0 ? 4 : 0)}%` }}
+                        className="bg-primary h-full rounded-full transition-all"
+                      />
+                    </div>
                   </div>
-                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div
-                      style={{ width: `${Math.max(pct, 5)}%` }}
-                      className="bg-blue-600 h-full rounded-full"
-                    />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
       </div>
     );
   }
