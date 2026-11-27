@@ -97,6 +97,145 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DataTable } from '@/components/ui/data-table';
 
+const EXTRA_KEY_LABELS = {
+  warehouse_name: 'Nama Gudang',
+  rfid_frequency: 'Frekuensi RFID',
+  rfid_gate_power_dbm: 'Daya Gate (dBm)',
+  anti_collision_mode: 'Mode Anti-Collision',
+  alarm_siren_enabled: 'Sirine Alarm',
+  reason: 'Alasan',
+  units: 'Jumlah Unit',
+  location_code: 'Kode Rak',
+  epc: 'Kode EPC',
+  invoice_no: 'Nomor Struk',
+  customer_name: 'Pelanggan',
+};
+
+function AuditLogDetailDialog({ log, onClose }) {
+  if (!log) return null;
+  const extraEntries = log?.extra_info
+    ? Object.entries(log.extra_info).filter(([, v]) => v !== '' && v !== null && v !== undefined)
+    : [];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      onClick={onClose}
+    >
+      <Card
+        className="w-full max-w-lg shadow-xl border bg-background"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline">{getFriendlyActionLabel(log)}</Badge>
+                {log?.actor_role && (
+                  <Badge variant="secondary" className="font-mono text-[10px]">
+                    {log.actor_role}
+                  </Badge>
+                )}
+              </div>
+              <CardTitle className="text-lg">Detail Aktivitas Sistem</CardTitle>
+              <CardDescription>{getFriendlyLogDetails(log)}</CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 w-7 p-0 text-muted-foreground"
+              onClick={onClose}
+            >
+              ✕
+            </Button>
+          </div>
+        </CardHeader>
+
+        <CardContent className="space-y-4 text-sm">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-xl border bg-muted/30 p-4">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Dilakukan Oleh
+              </p>
+              <p className="mt-0.5 font-medium text-foreground">
+                {log.actor_username || '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Waktu Kejadian
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-foreground">
+                {log.created_at
+                  ? new Date(log.created_at).toLocaleString('id-ID', {
+                      dateStyle: 'medium',
+                      timeStyle: 'medium',
+                    })
+                  : '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Kode Aksi
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-foreground">
+                {log.action || '-'}
+              </p>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                ID Catatan
+              </p>
+              <p className="mt-0.5 font-mono text-xs text-foreground">
+                #{log.id ?? '-'}
+              </p>
+            </div>
+          </div>
+
+          {(log.method || log.path) && (
+            <div className="rounded-xl border p-3.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                Jalur API
+              </p>
+              <p className="font-mono text-xs text-foreground break-all">
+                {[log.method, log.path].filter(Boolean).join(' ')}
+              </p>
+            </div>
+          )}
+
+          {extraEntries.length > 0 && (
+            <div className="rounded-xl border p-3.5 space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Rincian Tambahan
+              </p>
+              <div className="divide-y divide-border text-xs">
+                {extraEntries.map(([key, value]) => (
+                  <div key={key} className="flex items-start justify-between gap-4 py-1.5">
+                    <span className="text-muted-foreground">
+                      {EXTRA_KEY_LABELS[key] ||
+                        key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
+                    </span>
+                    <span className="font-medium text-foreground text-right break-all">
+                      {String(value)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button type="button" variant="outline" size="sm" onClick={onClose}>
+              Tutup
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function DashboardOverviewPage({
   activeMenu = 'dashboard',
   switchTab,
@@ -117,6 +256,7 @@ export default function DashboardOverviewPage({
   const [userRoleFilter, setUserRoleFilter] = useState('ALL');
   const [auditLogs, setAuditLogs] = useState([]);
   const [auditRoleFilter, setAuditRoleFilter] = useState('ALL');
+  const [selectedLog, setSelectedLog] = useState(null);
 
   // Modal Tambah User Baru
   const [showAddUserModal, setShowAddUserModal] = useState(false);
@@ -730,9 +870,11 @@ export default function DashboardOverviewPage({
                         const actor = String(log.actor_username || 'SYS');
                         const init = actor.slice(0, 2).toUpperCase();
                         return (
-                          <div
+                          <button
                             key={log.id}
-                            className="flex items-center gap-4"
+                            type="button"
+                            onClick={() => setSelectedLog(log)}
+                            className="flex w-full items-center gap-4 rounded-lg p-2 -mx-2 text-left transition-colors hover:bg-muted/60 cursor-pointer"
                           >
                             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-muted text-xs font-semibold">
                               {init}
@@ -750,7 +892,7 @@ export default function DashboardOverviewPage({
                                 {getFriendlyActionLabel(log)}
                               </Badge>
                             </div>
-                          </div>
+                          </button>
                         );
                       })
                     ) : lowStockItems.length > 0 ? (
@@ -943,6 +1085,7 @@ export default function DashboardOverviewPage({
             </Card>
           </TabsContent>
         </Tabs>
+        <AuditLogDetailDialog log={selectedLog} onClose={() => setSelectedLog(null)} />
       </div>
     );
   }
@@ -1243,18 +1386,43 @@ export default function DashboardOverviewPage({
                   accessorKey: 'action',
                   header: 'Aktivitas',
                   cell: ({ row }) => (
-                    <Badge variant="outline" className="font-medium">
-                      {getFriendlyActionLabel(row.original)}
-                    </Badge>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLog(row.original)}
+                      className="text-left cursor-pointer"
+                    >
+                      <Badge variant="outline" className="font-medium hover:bg-muted">
+                        {getFriendlyActionLabel(row.original)}
+                      </Badge>
+                    </button>
                   ),
                 },
                 {
                   accessorKey: 'details',
                   header: 'Keterangan',
                   cell: ({ row }) => (
-                    <span className="text-muted-foreground">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLog(row.original)}
+                      className="text-left text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                    >
                       {getFriendlyLogDetails(row.original)}
-                    </span>
+                    </button>
+                  ),
+                },
+                {
+                  id: 'detail_action',
+                  header: 'Detail',
+                  cell: ({ row }) => (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setSelectedLog(row.original)}
+                    >
+                      Lihat
+                    </Button>
                   ),
                 },
               ]}
@@ -1455,6 +1623,7 @@ export default function DashboardOverviewPage({
             </div>
           </div>
         )}
+        <AuditLogDetailDialog log={selectedLog} onClose={() => setSelectedLog(null)} />
       </div>
     );
   }
