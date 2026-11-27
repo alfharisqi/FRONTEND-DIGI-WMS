@@ -27,6 +27,7 @@ import {
   X,
   RefreshCw,
   Boxes,
+  BookOpen,
 } from 'lucide-react';
 import { toast as sonnerToast } from 'sonner';
 import { createMqttSubscription } from './config/mqttClient';
@@ -44,6 +45,7 @@ import PosPage from './modules/orang3-opname/PosPage';
 import ReturnPage from './modules/orang3-opname/ReturnPage';
 import GateSecurityPage from './modules/orang4-dashboard/GateSecurityPage';
 import MasterBoxPage from './modules/orang4-dashboard/MasterBoxPage';
+import HelpDocsPage from './modules/orang4-dashboard/HelpDocsPage';
 import GuidebookButton from './components/GuidebookButton';
 import { startInteractiveGuidebook } from './lib/guidebook';
 import { AppSidebar } from './components/layout/AppSidebar';
@@ -274,6 +276,7 @@ export default function App() {
         ? [{ id: 'users', label: 'Manajemen User', icon: Users }]
         : []),
       { id: 'laporan', label: 'Laporan & Analitik', icon: BarChart3 },
+      { id: 'helpdocs', label: 'Dokumentasi & Panduan', icon: BookOpen },
       { id: 'pengaturan', label: 'Pengaturan', icon: Settings, ...roBadge(isSecurity || isStaff) },
       { id: 'flyer', label: 'Flyer Promosi', icon: ImageIcon },
     ];
@@ -412,6 +415,10 @@ export default function App() {
       return <ReturnPage showNotification={showNotification} />;
     }
 
+    if (activeTab === 'helpdocs') {
+      return <HelpDocsPage switchTab={switchTab} />;
+    }
+
     if (activeTab === 'master-box') {
       return (
         <MasterBoxPage
@@ -444,7 +451,7 @@ export default function App() {
     {
       id: 'pengaturan',
       label: 'Pengaturan',
-      matchTabs: ['users', 'laporan', 'pengaturan', 'flyer'],
+      matchTabs: ['users', 'laporan', 'helpdocs', 'pengaturan', 'flyer'],
     },
   ];
 
