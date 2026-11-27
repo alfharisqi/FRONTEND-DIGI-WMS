@@ -12,6 +12,8 @@ export default function ReturnPage({ showNotification }) {
   const [invoiceItems, setInvoiceItems] = useState([]);
   const [selectedEpc, setSelectedEpc] = useState('');
   const [reason, setReason] = useState('');
+  const [inspectionResult, setInspectionResult] = useState('');
+  const [notes, setNotes] = useState('');
   const [targetRack, setTargetRack] = useState('');
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -71,9 +73,17 @@ export default function ReturnPage({ showNotification }) {
 };
 
 const handleProcessReturn = async () => {
-  if (!selectedInvoice || !selectedEpc || !reason || !targetRack) {
+  if (!selectedInvoice || !selectedEpc || !reason || !inspectionResult) {
     showNotification?.(
-      'Lengkapi invoice, EPC, alasan, dan rak tujuan.',
+      'Lengkapi invoice, EPC, alasan, dan hasil pemeriksaan.',
+      'error'
+    );
+    return;
+  }
+
+  if (inspectionResult === 'GOOD' && !targetRack) {
+    showNotification?.(
+      'Pilih rak tujuan untuk barang dengan kondisi GOOD.',
       'error'
     );
     return;
@@ -88,7 +98,9 @@ const handleProcessReturn = async () => {
         invoice_no: selectedInvoice,
         epc: selectedEpc,
         reason: reason,
-        target_rack: targetRack,
+        target_rack: inspectionResult === 'GOOD' ? targetRack : null,
+        inspection_result: inspectionResult,
+        notes: notes || null,
       }),
     });
 
@@ -100,6 +112,8 @@ const handleProcessReturn = async () => {
     setSelectedEpc('');
     setReason('');
     setTargetRack('');
+    setInspectionResult('');
+    setNotes('');
 
     await handleSelectInvoice(selectedInvoice);
   } catch (error) {
@@ -329,10 +343,34 @@ const handleProcessReturn = async () => {
     </select>
   </div>
 
-  <div className="mt-5">
+  {/* Dropdown hasil pemeriksaan */}
+<div className="mt-5">
   <label className="mb-2 block font-semibold">
-    Rak Tujuan Pengembalian
+    Hasil Pemeriksaan Barang
   </label>
+
+  <select
+    value={inspectionResult}
+    onChange={(e) => {
+      setInspectionResult(e.target.value);
+      setTargetRack('');
+    }}
+    className="w-full rounded-lg border border-gray-300 p-3"
+  >
+    <option value="">Pilih hasil pemeriksaan</option>
+    <option value="GOOD">GOOD - Barang layak dijual kembali</option>
+    <option value="DAMAGED">DAMAGED - Barang rusak</option>
+    <option value="NEEDS_INSPECTION">
+      NEEDS INSPECTION - Perlu pemeriksaan lanjutan
+    </option>
+  </select>
+</div>
+
+  {inspectionResult === 'GOOD' && (
+  <div className="mt-5">
+    <label className="mb-2 block font-semibold">
+      Rak Tujuan Pengembalian
+    </label>
 
   <select
     value={targetRack}
@@ -347,12 +385,33 @@ const handleProcessReturn = async () => {
     </option>
 ))}
   </select>
+  </div>
+)}
+
+{/* Catatan Pemeriksaan */}
+<div className="mt-5">
+  <label className="mb-2 block font-semibold">
+    Catatan Pemeriksaan (Opsional)
+  </label>
+  <textarea
+    value={notes}
+    onChange={(e) => setNotes(e.target.value)}
+    placeholder="Tambahkan catatan kondisi barang..."
+    rows={3}
+    className="w-full rounded-lg border border-gray-300 p-3"
+  />
 </div>
 
     <div className="mt-6 flex justify-end">
   <button
     type="button"
-    disabled={!selectedEpc || !reason || !targetRack || returnSubmitting}
+    disabled={
+  !selectedEpc ||
+  !reason ||
+  !inspectionResult ||
+  (inspectionResult === 'GOOD' && !targetRack) ||
+  returnSubmitting
+}
     onClick={handleProcessReturn}
     className="rounded-lg bg-blue-600 px-5 py-3 font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-gray-300"
   >
