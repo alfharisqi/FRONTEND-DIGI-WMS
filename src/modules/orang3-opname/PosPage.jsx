@@ -507,8 +507,11 @@ useEffect(() => {
   });
 
   return () => {
+    const wasConnected = client.connected;
     client.end(true);
-    console.log('[POS MQTT] Koneksi ditutup.');
+    if (wasConnected) {
+      console.log('[POS MQTT] Koneksi ditutup.');
+    }
   };
 }, []);
 
@@ -774,13 +777,13 @@ const handleCheckout = async () => {
       </div>
 
       {/* NAVIGASI TAB POS */}
-<div className="flex items-center gap-2 border-b border-slate-200 pb-3">
+<div className="flex items-center gap-2 border-b border-border pb-3">
   <button
     onClick={() => setActivePosTab('kasir')}
     className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition ${
       activePosTab === 'kasir'
         ? 'bg-blue-600 text-white shadow-md'
-        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+        : 'bg-card text-card-foreground text-muted-foreground border border-border hover:bg-muted/50'
     }`}
   >
     🛒 Kasir
@@ -791,14 +794,14 @@ const handleCheckout = async () => {
     className={`flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition ${
       activePosTab === 'riwayat'
         ? 'bg-blue-600 text-white shadow-md'
-        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+        : 'bg-card text-card-foreground text-muted-foreground border border-border hover:bg-muted/50'
     }`}
   >
     🧾 Riwayat Transaksi
     <span className={`text-xs px-2 py-0.5 rounded-full ${
       activePosTab === 'riwayat'
         ? 'bg-blue-500 text-white'
-        : 'bg-slate-100 text-slate-600'
+        : 'bg-muted text-muted-foreground'
     }`}>
       {sales.length}
     </span>
@@ -811,15 +814,15 @@ const handleCheckout = async () => {
     <div className="grid grid-cols-1 gap-5 items-start">
 
         {/* KATALOG PRODUK */}
-        <section className="w-full bg-white border border-slate-200 rounded-2xl overflow-hidden">
+        <section className="w-full bg-card text-card-foreground border border-border rounded-2xl overflow-hidden">
 
-          <div className="p-5 border-b border-slate-100">
+          <div className="p-5 border-b border-border">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h2 className="font-bold text-lg text-slate-900">
+                <h2 className="font-bold text-lg text-foreground">
                   Katalog Produk
                 </h2>
-                <p className="text-xs text-slate-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   {rackStockLoaded
                     ? 'Stok tersedia dihitung dari seluruh rak inventaris.'
                     : 'Stok rak belum tersedia; angka mengikuti katalog produk.'}
@@ -845,7 +848,7 @@ const handleCheckout = async () => {
                 value={search}
                 onChange={event => setSearch(event.target.value)}
                 placeholder="Cari nama barang, SKU, atau kategori..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                className="w-full bg-muted/50 border border-border rounded-xl pl-11 pr-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
               />
             </div>
 
@@ -875,7 +878,7 @@ const handleCheckout = async () => {
                     }
                   }}
                   placeholder="Masukkan kode EPC RFID..."
-                  className="flex-1 min-w-0 bg-white border border-blue-200 rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-200"
+                  className="flex-1 min-w-0 bg-card text-card-foreground border border-blue-200 rounded-lg px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-200"
                   disabled={scanLoading}
                 />
 
@@ -899,7 +902,7 @@ const handleCheckout = async () => {
                   className={`whitespace-nowrap px-4 py-2 rounded-lg text-xs font-semibold transition ${
                     selectedCategory === category
                       ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      : 'bg-muted text-muted-foreground hover:bg-slate-200'
                   }`}
                 >
                   {category}
@@ -911,13 +914,13 @@ const handleCheckout = async () => {
           {/* PRODUCT GRID */}
           <div className="p-5">
             {loading ? (
-              <div className="text-center py-16 text-slate-500">
+              <div className="text-center py-16 text-muted-foreground">
                 Memuat katalog produk...
               </div>
             ) : filteredProducts.length === 0 ? (
               <div className="text-center py-16">
                 <div className="text-4xl mb-3">📦</div>
-                <p className="font-semibold text-slate-700">
+                <p className="font-semibold text-foreground">
                   Produk tidak ditemukan
                 </p>
                 <p className="text-sm text-slate-400 mt-1">
@@ -949,7 +952,7 @@ const handleCheckout = async () => {
                   return (
                     <div
                       key={product.id}
-                      className="group border border-slate-200 rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition bg-white"
+                      className="group border border-border rounded-xl p-4 hover:border-blue-400 hover:shadow-md transition bg-card text-card-foreground"
                     >
                       <div className="flex justify-between items-start gap-2">
                         <span className="text-[11px] font-mono text-slate-400">
@@ -982,7 +985,7 @@ const handleCheckout = async () => {
                           📦
                         </div>
 
-                        <h3 className="font-bold text-sm text-slate-800 leading-snug min-h-10">
+                        <h3 className="font-bold text-sm text-foreground leading-snug min-h-10">
                           {product.name}
                         </h3>
 
@@ -991,7 +994,7 @@ const handleCheckout = async () => {
                         </p>
                       </div>
 
-                      <div className="border-t border-slate-100 pt-3">
+                      <div className="border-t border-border pt-3">
                         <p className="text-blue-700 font-bold text-base">
                           {formatRupiah(price)}
                         </p>
@@ -999,7 +1002,7 @@ const handleCheckout = async () => {
                         <button
                           type="button"
                           disabled={true}
-                          className="w-full mt-3 bg-slate-200 text-slate-500 rounded-lg py-2.5 text-xs font-bold cursor-not-allowed"
+                          className="w-full mt-3 bg-slate-200 text-muted-foreground rounded-lg py-2.5 text-xs font-bold cursor-not-allowed"
                         >
                           Scan RFID untuk Menambahkan
                         </button>
@@ -1043,14 +1046,14 @@ const handleCheckout = async () => {
             role="dialog"
             aria-modal="true"
             aria-labelledby="pos-cart-modal-title"
-            className="flex h-[94vh] max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+            className="flex h-[94vh] max-h-[94vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-card text-card-foreground shadow-2xl"
           >
-            <div className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-4 sm:px-6">
+            <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4 sm:px-6">
               <div>
-                <h2 id="pos-cart-modal-title" className="text-lg font-bold text-slate-900">
+                <h2 id="pos-cart-modal-title" className="text-lg font-bold text-foreground">
                   Keranjang Transaksi
                 </h2>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Periksa barang dan data pembayaran sebelum checkout
                 </p>
                 <span className="mt-2 inline-flex rounded-full bg-blue-100 px-3 py-1 text-xs font-bold text-blue-700">
@@ -1069,7 +1072,7 @@ const handleCheckout = async () => {
                 <button
                   type="button"
                   onClick={() => setCartModalOpen(false)}
-                  className="rounded-lg px-3 py-2 text-2xl leading-none text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                  className="rounded-lg px-3 py-2 text-2xl leading-none text-slate-400 transition hover:bg-muted hover:text-foreground"
                   aria-label="Tutup keranjang"
                 >
                   &times;
@@ -1082,7 +1085,7 @@ const handleCheckout = async () => {
               {cart.length === 0 ? (
                 <div className="py-12 text-center">
                   <div className="mb-3 text-5xl">🛒</div>
-                  <p className="font-semibold text-slate-700">Keranjang masih kosong</p>
+                  <p className="font-semibold text-foreground">Keranjang masih kosong</p>
                   <p className="mt-2 text-sm text-slate-400">
                     Pindai RFID dari katalog untuk memulai transaksi.
                   </p>
@@ -1092,11 +1095,11 @@ const handleCheckout = async () => {
                   {cart.map(item => (
                     <div
                       key={item.product_id}
-                      className="rounded-xl border border-slate-200 bg-slate-50 p-4"
+                      className="rounded-xl border border-border bg-muted/50 p-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-semibold text-sm text-slate-800">{item.name}</p>
+                          <p className="font-semibold text-sm text-foreground">{item.name}</p>
                           <p className="mt-1 text-xs text-slate-400">{item.sku}</p>
                         </div>
                         <button
@@ -1109,16 +1112,16 @@ const handleCheckout = async () => {
                       </div>
 
                       <div className="mt-3">
-                        <p className="mb-2 text-xs font-semibold text-slate-600">
+                        <p className="mb-2 text-xs font-semibold text-muted-foreground">
                           RFID Terpindai ({item.epcs?.length || 0} unit)
                         </p>
                         <div className="space-y-2">
                           {(item.epcs || []).map(epc => (
                             <div
                               key={epc}
-                              className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                              className="flex items-center justify-between gap-3 rounded-lg border border-border bg-card text-card-foreground px-3 py-2"
                             >
-                              <span className="break-all font-mono text-[11px] text-slate-600">
+                              <span className="break-all font-mono text-[11px] text-muted-foreground">
                                 {epc}
                               </span>
                               <button
@@ -1133,8 +1136,8 @@ const handleCheckout = async () => {
                         </div>
                       </div>
 
-                      <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
-                        <span className="text-xs text-slate-500">
+                      <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                        <span className="text-xs text-muted-foreground">
                           {formatRupiah(item.price)} / unit
                         </span>
                         <span className="font-bold text-blue-700">
@@ -1148,12 +1151,12 @@ const handleCheckout = async () => {
             </div>
 
             {/* Ringkasan dan checkout tetap terlihat di bawah */}
-            <div className="max-h-[48%] shrink-0 space-y-3 overflow-y-auto overscroll-contain border-t border-slate-200 bg-white p-4 sm:px-5">
+            <div className="max-h-[48%] shrink-0 space-y-3 overflow-y-auto overscroll-contain border-t border-border bg-card text-card-foreground p-4 sm:px-5">
               <div>
-                <h3 className="mb-3 text-sm font-bold text-slate-800">Data Transaksi</h3>
+                <h3 className="mb-3 text-sm font-bold text-foreground">Data Transaksi</h3>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-2 block text-xs font-semibold text-slate-600">
+                    <label className="mb-2 block text-xs font-semibold text-muted-foreground">
                       Nama Pelanggan
                     </label>
                     <input
@@ -1161,11 +1164,11 @@ const handleCheckout = async () => {
                       value={customerName}
                       onChange={event => setCustomerName(event.target.value)}
                       placeholder="Masukkan nama pelanggan"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      className="w-full rounded-lg border border-border px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                     />
                   </div>
                   <div>
-                    <label className="mb-2 block text-xs font-semibold text-slate-600">
+                    <label className="mb-2 block text-xs font-semibold text-muted-foreground">
                       Metode Pembayaran
                     </label>
                     <select
@@ -1174,7 +1177,7 @@ const handleCheckout = async () => {
                         setPaymentMethod(event.target.value);
                         if (event.target.value !== 'CASH') setCashReceived('');
                       }}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      className="w-full rounded-lg border border-border px-3 py-2.5 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                     >
                       <option value="CASH">CASH</option>
                       <option value="QRIS">QRIS</option>
@@ -1184,11 +1187,11 @@ const handleCheckout = async () => {
 
                 {paymentMethod === 'CASH' && (
                   <div className="mt-3">
-                    <label className="mb-2 block text-xs font-semibold text-slate-600">
+                    <label className="mb-2 block text-xs font-semibold text-muted-foreground">
                       Uang yang Dibayarkan Pembeli
                     </label>
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-white px-3 transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
-                      <span className="mr-2 text-sm font-semibold text-slate-500">Rp</span>
+                    <div className="flex items-center rounded-lg border border-border bg-card text-card-foreground px-3 transition focus-within:border-blue-400 focus-within:ring-2 focus-within:ring-blue-100">
+                      <span className="mr-2 text-sm font-semibold text-muted-foreground">Rp</span>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1202,13 +1205,13 @@ const handleCheckout = async () => {
                       />
                     </div>
                     <div className="mt-3 flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Uang diterima</span>
-                      <span className="font-semibold text-slate-800">
+                      <span className="text-muted-foreground">Uang diterima</span>
+                      <span className="font-semibold text-foreground">
                         {formatRupiah(cashReceivedAmount)}
                       </span>
                     </div>
                     <div className="mt-2 flex items-center justify-between text-sm">
-                      <span className="text-slate-500">Kembalian</span>
+                      <span className="text-muted-foreground">Kembalian</span>
                       <span className={`text-base font-bold ${
                         cashPaymentInsufficient ? 'text-slate-400' : 'text-emerald-600'
                       }`}>
@@ -1224,17 +1227,17 @@ const handleCheckout = async () => {
                 )}
               </div>
 
-              <div className="rounded-xl bg-slate-50 p-3">
-                <div className="flex justify-between text-sm text-slate-500">
+              <div className="rounded-xl bg-muted/50 p-3">
+                <div className="flex justify-between text-sm text-muted-foreground">
                   <span>Total item</span>
                   <span>{totalItems}</span>
                 </div>
-                <div className="mt-2 flex justify-between text-sm text-slate-500">
+                <div className="mt-2 flex justify-between text-sm text-muted-foreground">
                   <span>Subtotal</span>
                   <span>{formatRupiah(total)}</span>
                 </div>
-                <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">
-                  <span className="font-bold text-slate-800">Total Pembayaran</span>
+                <div className="mt-3 flex items-center justify-between border-t border-border pt-3">
+                  <span className="font-bold text-foreground">Total Pembayaran</span>
                   <span className="text-xl font-extrabold text-blue-700">
                     {formatRupiah(total)}
                   </span>
@@ -1250,7 +1253,7 @@ const handleCheckout = async () => {
                 <button
                   type="button"
                   onClick={() => setCartModalOpen(false)}
-                  className="rounded-xl border border-slate-200 px-5 py-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+                  className="rounded-xl border border-border px-5 py-3 text-sm font-semibold text-muted-foreground transition hover:bg-muted/50"
                 >
                   Lanjut Pilih Barang
                 </button>
@@ -1258,7 +1261,7 @@ const handleCheckout = async () => {
                   type="button"
                   onClick={handleCheckout}
                   disabled={cart.length === 0 || checkoutLoading || scanLoading || cashPaymentInsufficient}
-                  className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+                  className="rounded-xl bg-blue-600 px-6 py-3 text-sm font-bold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-muted-foreground"
                 >
                   {checkoutLoading ? 'Memproses Checkout...' : 'Checkout'}
                 </button>
@@ -1277,14 +1280,14 @@ const handleCheckout = async () => {
   <>
 
     {/* RIWAYAT TRANSAKSI POS */}
-    <section className="bg-white border border-slate-200 rounded-2xl overflow-hidden">
+    <section className="bg-card text-card-foreground border border-border rounded-2xl overflow-hidden">
 
-  <div className="p-5 border-b border-slate-100 flex justify-between items-center">
+  <div className="p-5 border-b border-border flex justify-between items-center">
     <div>
-      <h2 className="font-bold text-lg text-slate-900">
+      <h2 className="font-bold text-lg text-foreground">
         Riwayat Transaksi
       </h2>
-      <p className="text-xs text-slate-500 mt-1">
+      <p className="text-xs text-muted-foreground mt-1">
         Daftar 50 transaksi penjualan POS terbaru
       </p>
     </div>
@@ -1300,7 +1303,7 @@ const handleCheckout = async () => {
 
   <div className="overflow-x-auto">
     <table className="w-full text-sm text-left">
-      <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+      <thead className="bg-muted/50 text-muted-foreground text-xs uppercase">
         <tr>
           <th className="px-5 py-3">Invoice</th>
           <th className="px-5 py-3">Pelanggan</th>
@@ -1312,7 +1315,7 @@ const handleCheckout = async () => {
         </tr>
       </thead>
 
-      <tbody className="divide-y divide-slate-100">
+      <tbody className="divide-y divide-border">
         {salesLoading ? (
           <tr>
             <td colSpan="6" className="text-center py-8 text-slate-400">
@@ -1327,7 +1330,7 @@ const handleCheckout = async () => {
           </tr>
         ) : (
           sales.map(sale => (
-            <tr key={sale.id} className="hover:bg-slate-50">
+            <tr key={sale.id} className="hover:bg-muted/50">
               <td className="px-5 py-4">
               <button
                 type="button"
@@ -1360,7 +1363,7 @@ const handleCheckout = async () => {
                 </span>
               </td>
 
-              <td className="px-5 py-4 text-slate-500 whitespace-nowrap">
+              <td className="px-5 py-4 text-muted-foreground whitespace-nowrap">
                 {sale.created_at
                   ? new Date(sale.created_at).toLocaleString('id-ID')
                   : '-'}
@@ -1470,11 +1473,11 @@ const handleCheckout = async () => {
 {/* MODAL DETAIL INVOICE */}
 {selectedInvoice && (
   <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-    <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
+    <div className="bg-card text-card-foreground rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto">
 
-      <div className="p-5 border-b border-slate-200 flex justify-between items-center">
+      <div className="p-5 border-b border-border flex justify-between items-center">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">
+          <h2 className="text-lg font-bold text-foreground">
             Detail Invoice
           </h2>
           <p className="text-sm text-blue-700 font-semibold mt-1">
@@ -1488,7 +1491,7 @@ const handleCheckout = async () => {
             setSelectedInvoice(null);
             setInvoiceDetail(null);
           }}
-          className="text-slate-500 hover:text-red-600 text-2xl"
+          className="text-muted-foreground hover:text-red-600 text-2xl"
         >
           &times;
         </button>
@@ -1496,19 +1499,19 @@ const handleCheckout = async () => {
 
       <div className="p-5">
         {invoiceDetailLoading ? (
-          <div className="text-center py-10 text-slate-500">
+          <div className="text-center py-10 text-muted-foreground">
             Memuat detail invoice...
           </div>
         ) : invoiceDetail ? (
           <>
             <div className="mb-5">
-              <p className="text-xs text-slate-500">Nama pelanggan</p>
-              <p className="font-semibold text-slate-800">
+              <p className="text-xs text-muted-foreground">Nama pelanggan</p>
+              <p className="font-semibold text-foreground">
                 {invoiceDetail.invoice?.customer_or_destination || 'Pelanggan Umum'}
               </p>
             </div>
 
-            <h3 className="font-bold text-slate-800 mb-3">
+            <h3 className="font-bold text-foreground mb-3">
               Daftar Barang dan RFID
             </h3>
 
@@ -1517,15 +1520,26 @@ const handleCheckout = async () => {
                 invoiceDetail.items.map((item, index) => (
                   <div
                     key={`${item.tag_id}-${index}`}
-                    className="border border-slate-200 rounded-xl p-4"
+                    className="border border-border rounded-xl p-4"
                   >
                     <div className="flex justify-between items-start gap-3">
                       <div>
-                        <p className="font-bold text-slate-800">
-                          {item.sku}
+                        <p className="font-bold text-foreground">
+                          {item.product_name || item.sku}
+                          {item.product_name && (
+                            <span className="ml-2 text-xs font-mono font-normal text-muted-foreground">
+                              ({item.sku})
+                            </span>
+                          )}
                         </p>
-                        <p className="text-xs text-slate-500 mt-1">
+                        <p className="text-xs text-muted-foreground mt-1">
                           EPC: {item.epc}
+                          {Math.abs(Number(item.qty_change || 1)) > 1 && (
+                            <span className="ml-2 font-semibold text-foreground">
+                              · {Math.abs(Number(item.qty_change))} unit
+                              {item.box_code ? ` (${item.box_code})` : ''}
+                            </span>
+                          )}
                         </p>
                       </div>
 
@@ -1538,26 +1552,26 @@ const handleCheckout = async () => {
                       </span>
                     </div>
 
-                    <div className="mt-3 text-xs text-slate-500">
+                    <div className="mt-3 text-xs text-muted-foreground">
                       Status RFID: <strong>{item.tag_status || '-'}</strong>
                     </div>
                   </div>
                 ))
               ) : (
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-muted-foreground">
                   Tidak ada barang pada invoice ini.
                 </p>
               )}
             </div>
           </>
         ) : (
-          <p className="text-center py-8 text-slate-500">
+          <p className="text-center py-8 text-muted-foreground">
             Detail invoice tidak tersedia.
           </p>
         )}
       </div>
 
-      <div className="p-4 border-t border-slate-200 flex justify-between items-center">
+      <div className="p-4 border-t border-border flex justify-between items-center">
         <button
           type="button"
           onClick={handlePrintInvoice}

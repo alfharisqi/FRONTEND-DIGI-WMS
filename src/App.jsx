@@ -27,6 +27,7 @@ import {
   X,
   RefreshCw,
   Boxes,
+  BookOpen,
 } from 'lucide-react';
 import { toast as sonnerToast } from 'sonner';
 import { createMqttSubscription } from './config/mqttClient';
@@ -44,6 +45,7 @@ import PosPage from './modules/orang3-opname/PosPage';
 import ReturnPage from './modules/orang3-opname/ReturnPage';
 import GateSecurityPage from './modules/orang4-dashboard/GateSecurityPage';
 import MasterBoxPage from './modules/orang4-dashboard/MasterBoxPage';
+import HelpDocsPage from './modules/orang4-dashboard/HelpDocsPage';
 import GuidebookButton from './components/GuidebookButton';
 import { startInteractiveGuidebook } from './lib/guidebook';
 import { AppSidebar } from './components/layout/AppSidebar';
@@ -98,6 +100,19 @@ export default function App() {
   const roleUpper = String(currentUser?.role || '').toUpperCase();
   const isAdminOrSupervisor =
     roleUpper.includes('ADMIN') || roleUpper.includes('SUPERVISOR');
+  const isSecurityReadOnly = roleUpper === 'SECURITY';
+  const readOnlyTabs = [
+    'penerimaan',
+    'stok',
+    'penyimpanan',
+    'picking',
+    'pengiriman',
+    'pos',
+    'retur',
+    'rfid-tag',
+    'master-box',
+    'rfid-opname',
+  ];
 
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [healthData, setHealthData] = useState(null);
@@ -252,12 +267,17 @@ export default function App() {
   };
 
   const navGroups = useMemo(() => {
+    const isSecurity = roleUpper === 'SECURITY';
+    const isStaff = roleUpper === 'WAREHOUSE_STAFF';
+    const roBadge = (cond) => (cond ? { badge: 'View', badgeVariant: 'muted' } : {});
+
     const systemItems = [
       ...(isAdminOrSupervisor
         ? [{ id: 'users', label: 'Manajemen User', icon: Users }]
         : []),
       { id: 'laporan', label: 'Laporan & Analitik', icon: BarChart3 },
-      { id: 'pengaturan', label: 'Pengaturan', icon: Settings },
+      { id: 'helpdocs', label: 'Dokumentasi & Panduan', icon: BookOpen },
+      { id: 'pengaturan', label: 'Pengaturan', icon: Settings, ...roBadge(isSecurity || isStaff) },
       { id: 'flyer', label: 'Flyer Promosi', icon: ImageIcon },
     ];
 
@@ -266,22 +286,22 @@ export default function App() {
         title: 'Menu Utama',
         items: [
           { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-          { id: 'penerimaan', label: 'Penerimaan', icon: Truck },
-          { id: 'stok', label: 'Stok Barang', icon: Package },
-          { id: 'penyimpanan', label: 'Penyimpanan Rak', icon: MapPin },
+          { id: 'penerimaan', label: 'Penerimaan', icon: Truck, ...roBadge(isSecurity) },
+          { id: 'stok', label: 'Stok Barang', icon: Package, ...roBadge(isSecurity) },
+          { id: 'penyimpanan', label: 'Penyimpanan Rak', icon: MapPin, ...roBadge(isSecurity) },
           { id: 'stok-rak', label: 'Stok per Rak', icon: Layers },
-          { id: 'picking', label: 'Picking & Packing', icon: ClipboardList },
-          { id: 'pengiriman', label: 'Pengiriman', icon: Send },
+          { id: 'picking', label: 'Picking & Packing', icon: ClipboardList, ...roBadge(isSecurity) },
+          { id: 'pengiriman', label: 'Pengiriman', icon: Send, ...roBadge(isSecurity) },
         ],
       },
       {
         title: 'POS & RFID Gerbang',
         items: [
-          { id: 'pos', label: 'Kasir POS', icon: ShoppingCart },
-          { id: 'retur', label: 'Retur POS', icon: RotateCcw },
-          { id: 'rfid-tag', label: 'Tag & Encoding', icon: Tag },
-          { id: 'master-box', label: 'Master Box (Karton)', icon: Boxes },
-          { id: 'rfid-opname', label: 'Opname Handheld', icon: Radio },
+          { id: 'pos', label: 'Kasir POS', icon: ShoppingCart, ...roBadge(isSecurity) },
+          { id: 'retur', label: 'Retur POS', icon: RotateCcw, ...roBadge(isSecurity) },
+          { id: 'rfid-tag', label: 'Tag & Encoding', icon: Tag, ...roBadge(isSecurity) },
+          { id: 'master-box', label: 'Master Box (Karton)', icon: Boxes, ...roBadge(isSecurity) },
+          { id: 'rfid-opname', label: 'Opname Handheld', icon: Radio, ...roBadge(isSecurity) },
           { id: 'rfid-gate', label: 'Gate & Alarm Live', icon: Siren },
           { id: 'gate-security', label: 'Keamanan & Pass', icon: ShieldCheck },
           { id: 'ledger', label: 'Ledger Pergerakan', icon: FileText },
@@ -395,6 +415,10 @@ export default function App() {
       return <ReturnPage showNotification={showNotification} />;
     }
 
+    if (activeTab === 'helpdocs') {
+      return <HelpDocsPage switchTab={switchTab} />;
+    }
+
     if (activeTab === 'master-box') {
       return (
         <MasterBoxPage
@@ -427,7 +451,7 @@ export default function App() {
     {
       id: 'pengaturan',
       label: 'Pengaturan',
-      matchTabs: ['users', 'laporan', 'pengaturan', 'flyer'],
+      matchTabs: ['users', 'laporan', 'helpdocs', 'pengaturan', 'flyer'],
     },
   ];
 
@@ -522,15 +546,17 @@ export default function App() {
               </Button>
             </div>
 
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => setShowQuickAddModal(true)}
-              className="hidden xl:inline-flex h-8 text-xs gap-1.5"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              <span>Tambah SKU</span>
-            </Button>
+            {!isSecurityReadOnly && (
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => setShowQuickAddModal(true)}
+                className="hidden xl:inline-flex h-8 text-xs gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Tambah SKU</span>
+              </Button>
+            )}
 
             <Button
               type="button"
@@ -563,7 +589,19 @@ export default function App() {
           data-tour="main-content-area"
           className="shadcn-module-scope flex-1 overflow-y-auto px-4 py-6 sm:px-6 custom-scrollbar"
         >
-          <div className="mx-auto w-full max-w-7xl">{renderMainContent()}</div>
+          <div className="mx-auto w-full max-w-7xl">
+            {isSecurityReadOnly && readOnlyTabs.includes(activeTab) && (
+              <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs text-amber-900">
+                <span>
+                  <strong>Mode Lihat (Read-Only · Role SECURITY):</strong> Anda dapat memantau data pada halaman ini, namun perubahan/mutasi operasional hanya dapat dilakukan oleh Staff Gudang, Admin, atau Supervisor.
+                </span>
+                <Badge variant="outline" className="border-amber-400 text-amber-800 shrink-0">
+                  Read-Only
+                </Badge>
+              </div>
+            )}
+            {renderMainContent()}
+          </div>
         </main>
       </div>
 

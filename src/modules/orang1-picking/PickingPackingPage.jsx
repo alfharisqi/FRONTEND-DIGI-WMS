@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, ClipboardCheck, ClipboardList, Package, PackageCheck, Plus, RefreshCw, ScanLine, Search, Send } from 'lucide-react';
-import { pickingRequest } from './api';
+import { Button } from '../../components/ui/button';
+import { pickingRequest, validatePickingSelection } from './api';
 import { inboundRequest } from '../orang1-inbound/api';
+import CancellationDialog, { CancellationAudit } from './CancellationDialog';
 import PackingDetailsDialog from './PackingDetailsDialog';
 
 const columns = [
@@ -71,6 +73,11 @@ function OrderCard({ order, column, open }) {
             <p className="text-sm font-medium text-foreground">{line.product_name} <span className="text-muted-foreground">· {line.sku}</span></p>
             <p className="text-xs text-muted-foreground">{line.picked_qty}/{line.requested_qty} unit</p>
             {line.picked_qty < line.requested_qty && <RackList locations={line.locations} />}
+            {!ready && line.shortage_qty > 0 && (
+              <p className="rounded-md bg-amber-500/15 px-2 py-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
+                Kekurangan stok · {line.shortage_qty} unit
+              </p>
+            )}
             {line.scans.length > 0 && <p className="text-xs text-muted-foreground">Rak scan: {[...new Set(line.scans.map(scan => scan.location_code))].join(', ')}</p>}
           </li>
         ))}
@@ -81,8 +88,34 @@ function OrderCard({ order, column, open }) {
         {!shipped && (
           <button className={primary} disabled={ready && !picked} onClick={() => open(order.id, ready ? 'packing' : 'scan')}>{action}</button>
         )}
+        {order.can_cancel === true && (
+          <Button type="button" variant="destructive" size="sm" onClick={() => open(order.id, 'cancel')}>Batalkan Pesanan</Button>
+        )}
       </div>
     </article>
+  );
+}
+
+function CancelledOrders({ orders, open }) {
+  return (
+    <section aria-label="Riwayat pesanan dibatalkan" className="space-y-3">
+      {orders.map(order => (
+        <article key={order.id} aria-label={order.order_number} className="space-y-3 rounded-xl border border-border bg-card p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="break-all font-semibold">{order.order_number}</h3>
+            <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs font-semibold text-destructive">Dibatalkan</span>
+          </div>
+          <ul className="space-y-1 text-sm">
+            {order.lines.map(line => (
+              <li key={line.product_id}>{line.product_name} · {line.sku} · {line.requested_qty} unit diminta</li>
+            ))}
+          </ul>
+          <CancellationAudit audit={order.cancellation} />
+          <button type="button" className={secondary} onClick={() => open(order.id, 'detail')}>Detail</button>
+        </article>
+      ))}
+      {!orders.length && <p className="text-sm text-muted-foreground">Tidak ada pesanan dibatalkan yang sesuai.</p>}
+    </section>
   );
 }
 
@@ -113,12 +146,97 @@ function ScanHistory({ lines }) {
   );
 }
 
-function OrderDialog({ order, close, onScan, notify }) {
-  const dialog = useRef(null), epcField = useRef(null), inFlight = useRef(false);
-  const [epc, setEpc] = useState('');
+function CandidateChecklist({ lines, loaded, selected, setSelected, disabled, rackBoxes = [], onUnpackBox, unpackingBoxId }) {
+  const candidates = lines.flatMap(line => line.candidates ?? []);
+  return (
+    <section className="space-y-2" aria-labelledby="picking-candidates">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 id="picking-candidates" className="text-xs font-semibold uppercase text-slate-600">Pilih EPC Barang</h3>
+        <div className="flex items-center gap-3 text-xs font-semibold">
+          <button type="button" className="text-blue-700 hover:underline disabled:opacity-50" disabled={disabled || !candidates.length}
+            onClick={() => setSelected(candidates.map(candidate => candidate.epc))}>Pilih Semua</button>
+          <button type="button" className="text-slate-600 hover:underline disabled:opacity-50" disabled={disabled || !selected.length}
+            onClick={() => setSelected([])}>Bersihkan</button>
+        </div>
+      </div>
+      <p className="text-xs text-slate-600">Pilih EPC dari data sistem untuk simulasi Picking.</p>
+      {lines.filter(line => line.remaining_qty > 0).map(line => {
+        const lineBoxes = rackBoxes.filter(
+          b => b.status === 'IN_RACK' && (String(b.product_id) === String(line.product_id) || b.sku === line.sku)
+        );
+        return (
+          <fieldset className="space-y-1.5" key={line.product_id} disabled={disabled}>
+            <legend className="text-sm font-semibold">{line.sku} · {line.product_name}</legend>
+            <RackList locations={line.locations} />
+            <p className="text-xs text-slate-600">
+              Sisa kebutuhan {line.remaining_qty} unit · Stok tersedia {line.available_qty} unit
+              {loaded && ` · ${line.candidates.length} EPC ditampilkan`}
+            </p>
+            {line.shortage_qty > 0 && (
+              <p className="rounded-md bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-900">
+                Kekurangan stok {line.shortage_qty} unit. Lanjutkan Picking setelah stok tersedia.
+              </p>
+            )}
+            {lineBoxes.length > 0 && (
+              <div className="rounded-xl border border-indigo-200 bg-indigo-50/60 p-2.5 space-y-1.5">
+                <p className="text-[11px] font-semibold text-indigo-900">
+                  📦 Tersedia {lineBoxes.length} Box di Rak untuk SKU ini (pecah ke Tag Satuan untuk langsung diambil):
+                </p>
+                <div className="space-y-1">
+                  {lineBoxes.map(bx => (
+                    <div key={bx.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-2.5 py-1.5 border border-indigo-100 text-xs">
+                      <div>
+                        <span className="font-mono font-bold text-indigo-700">{bx.box_code}</span>
+                        <span className="text-slate-600"> · {bx.qty_per_box} unit · Rak {bx.location_code || '-'}</span>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={disabled || unpackingBoxId === bx.id}
+                        onClick={() => onUnpackBox?.(bx)}
+                        className="rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 py-1 text-[11px] font-semibold disabled:opacity-50"
+                      >
+                        {unpackingBoxId === bx.id ? 'Memecah Box...' : 'Pecah Box & Ambil EPC'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {line.candidates?.length ? (
+              <div className="max-h-40 space-y-1 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+                {line.candidates.map(candidate => (
+                  <label className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 rounded-lg p-2 text-xs hover:bg-white focus-within:bg-white" key={candidate.epc}>
+                    <input type="checkbox" checked={selected.includes(candidate.epc)}
+                      onChange={event => {
+                        const checked = event.target.checked;
+                        setSelected(previous => checked ? [...previous, candidate.epc] : previous.filter(epc => epc !== candidate.epc));
+                      }} />
+                    <code className="break-all font-semibold text-slate-800">{candidate.epc}</code>
+                    <span>{candidate.location_code} · {candidate.location_name}</span>
+                    <span className="ml-auto rounded bg-slate-200 px-1.5 py-0.5 font-semibold text-slate-700">{candidate.tag_status}</span>
+                  </label>
+                ))}
+              </div>
+            ) : loaded && <p className="text-xs text-slate-500">Belum ada EPC yang memenuhi syarat Picking untuk SKU ini.</p>}
+          </fieldset>
+        );
+      })}
+      {lines.length > 0 && !lines.some(line => line.remaining_qty > 0) && <p className="text-xs text-slate-500">Seluruh kebutuhan Picking telah terpenuhi.</p>}
+    </section>
+  );
+}
+
+function OrderDialog({ order, close, onScan, onReload, needsReload, notify }) {
+  const dialog = useRef(null), inFlight = useRef(false);
+  const candidateRequest = useRef(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(null);
-  const ready = order.status === 'SIAP_PACKING';
+  const [selection, setSelection] = useState([]);
+  const [candidates, setCandidates] = useState({ lines: null, loading: true, error: '' });
+  const [batchProgress, setBatchProgress] = useState(null);
+  const [rackBoxes, setRackBoxes] = useState([]);
+  const [unpackingBoxId, setUnpackingBoxId] = useState(null);
+  const ready = !['MENUNGGU_PICKING', 'SEDANG_DIAMBIL'].includes(order.status);
   useEffect(() => {
     const trigger = document.activeElement;
     const element = dialog.current;
@@ -128,27 +246,95 @@ function OrderDialog({ order, close, onScan, notify }) {
       if (trigger?.isConnected) trigger.focus();
     };
   }, []);
-  useEffect(() => { if (!ready) epcField.current?.focus(); }, [ready]);
 
-  async function submit(event) {
-    event.preventDefault();
-    if (inFlight.current || ready || !epc.trim()) return;
+  const refreshRackBoxes = useCallback(async () => {
+    try {
+      const boxes = await inboundRequest('/boxes');
+      if (Array.isArray(boxes)) setRackBoxes(boxes);
+    } catch {
+      // Abaikan jika endpoint boxes belum tersedia pada mock test
+    }
+  }, []);
+
+  const refreshCandidates = useCallback(async () => {
+    candidateRequest.current?.abort();
+    const controller = new AbortController();
+    candidateRequest.current = controller;
+    setCandidates({ lines: null, loading: true, error: '' });
+    void refreshRackBoxes();
+    try {
+      const data = await pickingRequest(`/orders/${order.id}/available-epcs`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (data?.order_id !== order.id || !Array.isArray(data.lines) || data.lines.some(line => !Array.isArray(line.candidates))) {
+        throw new Error('Format daftar EPC Picking tidak valid.');
+      }
+      setCandidates({ lines: data.lines, loading: false, error: '' });
+    } catch (error) {
+      if (!controller.signal.aborted) setCandidates({ lines: null, loading: false, error: error.message });
+    }
+  }, [order.id, refreshRackBoxes]);
+
+  async function handleUnpackBoxInPicking(bx) {
+    if (!bx?.id || unpackingBoxId) return;
+    setUnpackingBoxId(bx.id);
+    try {
+      await inboundRequest(`/boxes/${bx.id}/unpack`, {
+        method: 'POST',
+        body: JSON.stringify({ mode: 'TO_UNIT' }),
+      });
+      notify?.(`Box ${bx.box_code} berhasil dipecah menjadi ${bx.qty_per_box} Tag RFID satuan di rak ${bx.location_code || ''}!`, 'success');
+      await refreshPicking();
+    } catch (err) {
+      notify?.(err.message || 'Gagal memecah Box.', 'error');
+    } finally {
+      setUnpackingBoxId(null);
+    }
+  }
+
+  useEffect(() => {
+    if (!ready) void refreshCandidates();
+    return () => candidateRequest.current?.abort();
+  }, [ready, refreshCandidates]);
+
+  async function refreshPicking() {
+    setSelection([]);
+    await Promise.all([onReload(order.id), refreshCandidates()]);
+  }
+
+  async function reload() {
+    if (inFlight.current) return;
+    inFlight.current = true;
+    setBusy(true);
+    try {
+      await refreshPicking();
+    } finally {
+      setBusy(false);
+      inFlight.current = false;
+    }
+  }
+
+  async function submit(epcs) {
+    if (inFlight.current || needsReload || ready || !epcs.length) return;
     inFlight.current = true;
     setBusy(true);
     setNotice(null);
     try {
-      const updated = await onScan(order.id, epc);
-      setEpc('');
-      const message = updated.status === 'SIAP_PACKING' ? 'Semua EPC tervalidasi. Pesanan siap packing.' : 'EPC cocok dan berhasil direservasi.';
-      setNotice({ text: message, error: false });
-      notify?.(message, 'success');
+      const result = await validatePickingSelection(epcs, value => onScan(order.id, value),
+        current => setBatchProgress({ current, total: epcs.length }));
+      setNotice({
+        text: `${result.succeeded} berhasil · ${result.failures.length} ditolak.${result.unattempted ? ` ${result.unattempted} EPC belum diproses.` : ''}`,
+        error: Boolean(result.failures.length || result.interrupted),
+        failures: result.failures,
+        interrupted: result.interrupted,
+      });
     } catch (error) {
       setNotice({ text: error.message, error: true });
       notify?.(error.message, 'error');
     } finally {
+      setBatchProgress(null);
+      await refreshPicking();
       setBusy(false);
       inFlight.current = false;
-      requestAnimationFrame(() => epcField.current?.focus());
     }
   }
 
@@ -163,24 +349,35 @@ function OrderDialog({ order, close, onScan, notify }) {
           <button className={secondary} disabled={busy} onClick={close}>Tutup</button>
         </div>
         <Progress order={order} />
-        {!ready && order.lines.filter(line => line.picked_qty < line.requested_qty).map(line => (
-          <div className="space-y-1" key={line.product_id}>
-            <p className="text-sm font-semibold">{line.sku} · {line.product_name}</p>
-            <RackList locations={line.locations} />
-          </div>
-        ))}
         {!ready && (
-          <form className="space-y-2" onSubmit={submit}>
-            <label className="block text-sm font-semibold" htmlFor="picking-epc">EPC RFID</label>
-            <div className="flex flex-wrap gap-2 sm:flex-nowrap">
-              <input ref={epcField} className={input} id="picking-epc" value={epc} onChange={event => setEpc(event.target.value)} required maxLength={64} autoComplete="off" spellCheck={false} disabled={busy} />
-              <button className={`${primary} shrink-0`} disabled={busy || !epc.trim()} type="submit">
-                <ScanLine size={16} /> {busy ? 'Memvalidasi…' : 'Validasi Scan'}
-              </button>
-            </div>
-          </form>
+          <div className="space-y-2">
+            <button type="button" className={secondary} disabled={busy || candidates.loading} onClick={reload}>Muat Ulang Stok</button>
+            {candidates.loading && <p role="status" className="text-xs text-slate-600">Memuat daftar EPC…</p>}
+            {candidates.error && <p role="alert" className="text-sm text-red-800">{candidates.error}</p>}
+            <CandidateChecklist lines={candidates.lines ?? order.lines} loaded={candidates.lines !== null}
+              selected={selection} setSelected={setSelection}
+              disabled={busy || needsReload || candidates.loading}
+              rackBoxes={rackBoxes}
+              onUnpackBox={handleUnpackBoxInPicking}
+              unpackingBoxId={unpackingBoxId} />
+            <p className="text-xs text-slate-600" aria-live="polite">{selection.length} EPC dipilih</p>
+            <button type="button" className={primary} disabled={busy || needsReload || candidates.loading || !selection.length}
+              onClick={() => submit(selection)}>
+              <ScanLine size={16} /> Validasi Scan ({selection.length} EPC)
+            </button>
+          </div>
         )}
-        {notice && <p role={notice.error ? 'alert' : 'status'} className={`rounded-lg px-3 py-2 text-sm ${notice.error ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>{notice.text}</p>}
+        {batchProgress && <p role="status" className="text-sm text-slate-600">Memvalidasi EPC {batchProgress.current}/{batchProgress.total}…</p>}
+        {needsReload && <p role="alert" className="text-sm text-red-800">Data terakhir pesanan belum dapat diperiksa. Muat ulang data sebelum memvalidasi EPC lagi.</p>}
+        {notice && (
+          <div role={notice.error ? 'alert' : 'status'} className={`space-y-1 rounded-lg px-3 py-2 text-sm ${notice.error ? 'bg-red-50 text-red-800' : 'bg-emerald-50 text-emerald-800'}`}>
+            <p>{notice.text}</p>
+            {notice.failures?.length > 0 && <ul className="list-disc space-y-1 pl-4">
+              {notice.failures.map(failure => <li key={failure.epc} className="break-words">{failure.epc} · {failure.message}</li>)}
+            </ul>}
+            {notice.interrupted && <p className="break-words">Validasi berhenti pada {notice.interrupted.epc}. {notice.interrupted.message} Periksa riwayat scan untuk memastikan hasil EPC ini.</p>}
+          </div>
+        )}
         <ScanHistory lines={order.lines} />
       </div>
     </dialog>
@@ -195,8 +392,13 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
   const [status, setStatus] = useState('');
   const [packingStatus, setPackingStatus] = useState('');
   const [dialog, setDialog] = useState(null);
+  const [unreconciledOrders, setUnreconciledOrders] = useState([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [products, setProducts] = useState([]);
+  const [productsError, setProductsError] = useState('');
+  const [availability, setAvailability] = useState(null);
+  const [availabilityRevision, setAvailabilityRevision] = useState(0);
+  const [createError, setCreateError] = useState('');
   const [creating, setCreating] = useState(false);
   const [newOrderForm, setNewOrderForm] = useState({
     order_number: `ORD-PICK-2026-${Math.floor(100 + Math.random() * 900)}`,
@@ -204,6 +406,14 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     requested_qty: 1,
   });
   const listRequest = useRef(null);
+  const createInFlight = useRef(false);
+  const productId = newOrderForm.product_id;
+  const currentAvailability = availability?.productId === productId ? availability : null;
+  const availableQty = currentAvailability?.quantity;
+  const requestedQty = Number(newOrderForm.requested_qty);
+  const validQuantity = Number.isInteger(requestedQty) && requestedQty > 0;
+  const canCreate = validQuantity && availableQty !== undefined && requestedQty <= availableQty
+    && newOrderForm.order_number.trim().length > 0;
 
   const load = useCallback(async () => {
     listRequest.current?.abort();
@@ -213,24 +423,33 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     setError('');
     try {
       const data = await pickingRequest('/orders', { signal: controller.signal });
-      if (!controller.signal.aborted) {
-        if (!Array.isArray(data)) throw new Error('Format daftar pesanan tidak valid.');
-        setOrders(data);
-      }
+      if (controller.signal.aborted) return false;
+      if (!Array.isArray(data)) throw new Error('Format daftar pesanan tidak valid.');
+      setOrders(data);
+      setUnreconciledOrders([]);
+      return true;
     } catch (err) {
       if (!controller.signal.aborted) setError(err.message);
+      return false;
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
   }, []);
   useEffect(() => { load(); return () => listRequest.current?.abort(); }, [load]);
 
+  async function reloadOrder(orderId) {
+    if (!await load()) {
+      setUnreconciledOrders(previous => previous.includes(orderId) ? previous : [...previous, orderId]);
+    }
+  }
+
   async function scan(orderId, epc) {
     const response = await pickingRequest('/scan', { body: { order_id: orderId, epc } });
-    listRequest.current?.abort();
-    setOrders(previous => previous.map(order => order.id === response.order.id ? response.order : order));
-    // Reload every card since the same rack stock may be listed on several orders.
-    void load();
+    if (response?.order?.id !== orderId || !Array.isArray(response.order.lines)
+      || response.scan?.order_id !== orderId || response.scan.epc !== epc.trim().toUpperCase()) {
+      throw new Error('Respons validasi EPC tidak lengkap.');
+    }
+    updateOrder(response.order);
     return response.order;
   }
 
@@ -240,25 +459,67 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     setOrders(previous => previous.map(order => order.id === updated.id ? updated : order));
   }
 
-  async function openCreateOrderModal() {
-    setShowCreateModal(true);
-    try {
-      const prodList = await inboundRequest('/products');
-      if (Array.isArray(prodList)) {
-        setProducts(prodList);
-        if (prodList.length > 0 && !newOrderForm.product_id) {
-          setNewOrderForm(prev => ({ ...prev, product_id: prodList[0].id }));
-        }
-      }
-    } catch {
-      // ignore
+  async function cancelOrder(order, body) {
+    const data = await pickingRequest(`/orders/${encodeURIComponent(order.id)}/cancel`, { body });
+    if (data?.id !== order.id || data.status !== 'DIBATALKAN' || !data.cancellation) {
+      throw new Error('Respons pembatalan belum lengkap. Muat ulang pesanan untuk memeriksa status.');
     }
+    updateOrder({ ...order, ...data });
+    setPackingStatus('');
+    setStatus('DIBATALKAN');
+    setDialog(null);
+    showNotification?.('Pesanan picking dibatalkan.', 'success');
+    void load();
+  }
+
+  useEffect(() => {
+    if (!showCreateModal) return;
+    let current = true;
+    inboundRequest('/products').then(prodList => {
+      if (!current) return;
+      if (!Array.isArray(prodList)) throw new Error('Format daftar produk tidak valid.');
+      setProducts(prodList);
+      setNewOrderForm(previous => prodList.some(product => product.id === previous.product_id) ? previous
+        : { ...previous, product_id: prodList[0]?.id ?? '' });
+    }).catch(error => {
+      if (current) setProductsError(error.message);
+    });
+    return () => { current = false; };
+  }, [showCreateModal]);
+
+  useEffect(() => {
+    if (!showCreateModal || !productId) return;
+    const controller = new AbortController();
+    pickingRequest(`/availability?product_id=${encodeURIComponent(productId)}`, { signal: controller.signal }).then(data => {
+      if (controller.signal.aborted) return;
+      if (data?.product_id !== productId || !Number.isInteger(data.available_qty) || data.available_qty < 0) {
+        throw new Error('Format informasi stok Picking tidak valid.');
+      }
+      setAvailability({ productId, quantity: data.available_qty });
+    }).catch(error => {
+      if (!controller.signal.aborted) setAvailability({ productId, error: error.message });
+    });
+    return () => controller.abort();
+  }, [showCreateModal, productId, availabilityRevision]);
+
+  function openCreateOrderModal() {
+    setProductsError('');
+    setCreateError('');
+    setAvailability(null);
+    setShowCreateModal(true);
+  }
+
+  function refreshAvailability() {
+    setAvailability(null);
+    setAvailabilityRevision(revision => revision + 1);
   }
 
   async function handleCreatePickingOrder(event) {
     event.preventDefault();
-    if (!newOrderForm.order_number.trim() || !newOrderForm.product_id) return;
+    if (!canCreate || createInFlight.current) return;
+    createInFlight.current = true;
     setCreating(true);
+    setCreateError('');
     try {
       await pickingRequest('/orders', {
         body: {
@@ -266,7 +527,7 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
           lines: [
             {
               product_id: newOrderForm.product_id,
-              requested_qty: Number(newOrderForm.requested_qty) || 1,
+              requested_qty: requestedQty,
             },
           ],
         },
@@ -280,8 +541,10 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
       });
       await load();
     } catch (err) {
-      showNotification?.(err.message || 'Gagal membuat pesanan picking', 'error');
+      setCreateError(err.message || 'Gagal membuat pesanan Picking.');
+      refreshAvailability();
     } finally {
+      createInFlight.current = false;
       setCreating(false);
     }
   }
@@ -293,6 +556,9 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
     return terms.every(term => searchable.includes(term));
   });
   const selected = dialog && orders.find(order => order.id === dialog.id);
+  const openOrder = (id, mode) => setDialog({ id, mode });
+  const closeOrder = () => setDialog(null);
+  const history = status === 'DIBATALKAN';
 
   return (
     <div className="space-y-5">
@@ -342,13 +608,16 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
           }}>
             <option value="">Semua status</option>
             {columns.map(column => <option key={column.status} value={column.status}>{column.label}</option>)}
+            <option value="DIBATALKAN">Dibatalkan</option>
           </select>
         </label>
       </div>
       {loading && <p className="text-sm text-slate-600" role="status">Memuat pesanan…</p>}
       {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-800" role="alert">{error}{orders.length > 0 ? ' Daftar menampilkan hasil terakhir.' : ''}</p>}
-      {!loading && !error && !orders.length && <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Belum ada pesanan picking.</p>}
-      {(orders.length > 0 || (!loading && !error)) && (
+      {!history && !loading && !error && !orders.length && <p className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600">Belum ada pesanan picking.</p>}
+      {(orders.length > 0 || (!loading && !error)) && (history
+        ? <CancelledOrders orders={matches.filter(order => order.status === 'DIBATALKAN')} open={openOrder} />
+        : (
         <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-4">
           {columns.filter(column => !status || status === column.status).map(column => {
             const cards = matches.filter(order => order.status === column.status);
@@ -360,65 +629,106 @@ export default function PickingPackingPage({ searchQuery = '', showNotification 
                   {column.label} <span className="ml-auto text-xs text-slate-500">{cards.length}</span>
                 </h3>
                 <div className="space-y-3">
-                  {cards.map(order => <OrderCard key={order.id} order={order} column={column} open={(id, mode) => setDialog({ id, mode })} />)}
+                  {cards.map(order => <OrderCard key={order.id} order={order} column={column} open={openOrder} />)}
                   {!cards.length && <p className="rounded-lg border border-dashed border-slate-200 p-4 text-xs text-slate-500">Tidak ada pesanan pada kolom ini.</p>}
                 </div>
               </section>
             );
           })}
         </div>
+      ))}
+      {selected && dialog.mode === 'cancel' && (
+        <CancellationDialog key={selected.id} order={selected} close={closeOrder} onSubmit={body => cancelOrder(selected, body)} />
       )}
-      {selected && (dialog.mode === 'scan'
-        ? <OrderDialog key={selected.id} order={selected} close={() => setDialog(null)} onScan={scan} notify={showNotification} />
-        : <PackingDetailsDialog key={`${selected.id}:${dialog.mode}`} orderId={selected.id} orderNumber={selected.order_number}
-            mode={dialog.mode} close={() => setDialog(null)} onOrderChange={updateOrder} notify={showNotification} />)}
+      {selected && dialog.mode === 'scan' && (
+        <OrderDialog key={selected.id} order={selected} close={closeOrder} onScan={scan} onReload={reloadOrder}
+          needsReload={unreconciledOrders.includes(selected.id)} notify={showNotification} />
+      )}
+      {selected && (dialog.mode === 'detail' || dialog.mode === 'packing') && (
+        <PackingDetailsDialog key={`${selected.id}:${dialog.mode}`} orderId={selected.id} orderNumber={selected.order_number}
+          mode={dialog.mode} close={closeOrder} onOrderChange={updateOrder} notify={showNotification} />
+      )}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl">
+          <div className="max-h-[90dvh] w-full max-w-md overflow-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl"
+            role="dialog" aria-modal="true" aria-labelledby="create-picking-title">
             <div className="mb-4 flex items-center justify-between">
-              <h3 className="text-lg font-bold text-slate-900">Buat Pesanan Picking Baru</h3>
-              <button type="button" className={secondary} onClick={() => setShowCreateModal(false)}>✕</button>
+              <h3 id="create-picking-title" className="text-lg font-bold text-slate-900">Buat Pesanan Picking Baru</h3>
+              <button type="button" aria-label="Tutup" className={secondary} disabled={creating} onClick={() => setShowCreateModal(false)}>✕</button>
             </div>
             <form onSubmit={handleCreatePickingOrder} className="space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">Nomor Pesanan (Order Number)</label>
+                <label htmlFor="picking-order-number" className="mb-1 block text-xs font-semibold uppercase text-slate-600">Nomor Pesanan (Order Number)</label>
                 <input
+                  id="picking-order-number"
                   type="text"
                   required
+                  maxLength={80}
+                  disabled={creating}
                   className={input}
                   value={newOrderForm.order_number}
                   onChange={e => setNewOrderForm({ ...newOrderForm, order_number: e.target.value })}
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">Pilih Barang / SKU</label>
+                <label htmlFor="picking-product" className="mb-1 block text-xs font-semibold uppercase text-slate-600">Pilih Barang / SKU</label>
                 <select
+                  id="picking-product"
                   required
+                  disabled={creating}
                   className={input}
                   value={newOrderForm.product_id}
-                  onChange={e => setNewOrderForm({ ...newOrderForm, product_id: e.target.value })}
+                  onChange={e => {
+                    setNewOrderForm({ ...newOrderForm, product_id: e.target.value });
+                    setCreateError('');
+                    setAvailability(null);
+                  }}
                 >
                   <option value="">-- Pilih Produk --</option>
                   {products.map(p => (
                     <option key={p.id} value={p.id}>{p.sku} — {p.name}</option>
                   ))}
                 </select>
+                {productsError && <p role="alert" className="mt-2 text-xs text-red-800">{productsError}</p>}
+                {productId && !currentAvailability && <p role="status" className="mt-2 text-xs text-slate-600">Memeriksa stok Picking…</p>}
+                {currentAvailability?.error && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <p role="alert" className="text-xs text-red-800">{currentAvailability.error}</p>
+                    <button type="button" className={secondary} disabled={creating} onClick={refreshAvailability}>Periksa Ulang Stok</button>
+                  </div>
+                )}
+                {availableQty !== undefined && <p role="status" className="mt-2 text-sm font-semibold text-slate-700">Stok tersedia untuk Picking · {availableQty} unit</p>}
+                {availableQty === 0 && <p className="mt-1 text-xs text-amber-900">SKU ini belum memiliki unit yang memenuhi syarat Picking.</p>}
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-slate-600">Jumlah Unit Diminta</label>
+                <label htmlFor="picking-quantity" className="mb-1 block text-xs font-semibold uppercase text-slate-600">Jumlah Unit Diminta</label>
                 <input
+                  id="picking-quantity"
                   type="number"
                   required
                   min="1"
-                  max="100"
+                  step="1"
+                  max={availableQty ?? 2147483647}
+                  disabled={creating}
                   className={input}
                   value={newOrderForm.requested_qty}
                   onChange={e => setNewOrderForm({ ...newOrderForm, requested_qty: e.target.value })}
                 />
+                {!validQuantity && <p className="mt-2 text-xs text-red-800">Jumlah unit harus berupa bilangan bulat positif.</p>}
+                {validQuantity && availableQty !== undefined && requestedQty > availableQty && (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-xs text-amber-900">Stok tidak mencukupi. Diminta {requestedQty} unit, tersedia {availableQty} unit.</p>
+                    {availableQty > 0 && <button type="button" className={secondary} disabled={creating}
+                      onClick={() => setNewOrderForm(previous => ({ ...previous, requested_qty: availableQty }))}>
+                      Gunakan jumlah tersedia ({availableQty} unit)
+                    </button>}
+                  </div>
+                )}
               </div>
+              {createError && <p role="alert" className="rounded-lg bg-red-50 p-2 text-sm text-red-800">{createError}</p>}
               <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
-                <button type="button" className={secondary} onClick={() => setShowCreateModal(false)}>Batal</button>
-                <button type="submit" disabled={creating} className={primary}>
+                <button type="button" className={secondary} disabled={creating} onClick={() => setShowCreateModal(false)}>Batal</button>
+                <button type="submit" disabled={creating || !canCreate} className={primary}>
                   {creating ? 'Menyimpan…' : 'Simpan Pesanan'}
                 </button>
               </div>

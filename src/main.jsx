@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import { ThemeProvider } from './context/ThemeProvider';
 import { LayoutProvider } from './context/LayoutProvider';
 import App from './App';
+import './config/fetchAuditInterceptor';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(

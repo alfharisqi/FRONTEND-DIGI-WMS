@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { Download, FileText, Plus, Printer, Send } from 'lucide-react';
+import { Download, FileText, MapPin, Plus, Printer, Send } from 'lucide-react';
 import { API_BASE_URL } from '../../config/api';
+import { tokenStorageKey } from '../../config/authSession';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+const emptyShipment = {
+  sourceKey: '', resi: '', courier: 'JNE Express', dest: '', epcs: '', total_amount: '0',
+};
 
 export default function InventoryLedgerPage({
   activeMenu = 'penyimpanan',
@@ -15,6 +21,10 @@ export default function InventoryLedgerPage({
   const [ledger, setLedger] = useState([]);
   const [localSearch, setLocalSearch] = useState('');
   const [showRackModal, setShowRackModal] = useState(false);
+  const [selectedRackId, setSelectedRackId] = useState(null);
+  const [editingRack, setEditingRack] = useState(null);
+  const [deleteRackTarget, setDeleteRackTarget] = useState(null);
+  const [rackActionBusy, setRackActionBusy] = useState(false);
   const [isSavingRack, setIsSavingRack] = useState(false);
   const [rackForm, setRackForm] = useState({
     code: '',
@@ -27,7 +37,9 @@ export default function InventoryLedgerPage({
   const [epcCode, setEpcCode] = useState('');
   const [targetLoc, setTargetLoc] = useState('');
   const [allTags, setAllTags] = useState([]);
+  const [allBoxes, setAllBoxes] = useState([]);
   const [pickingOrders, setPickingOrders] = useState([]);
+  const [posOrders, setPosOrders] = useState([]);
   const [selectedPutawayEpcs, setSelectedPutawayEpcs] = useState([]);
   const [isBulkPutaway, setIsBulkPutaway] = useState(false);
 
@@ -35,22 +47,38 @@ export default function InventoryLedgerPage({
   const [shippingList, setShippingList] = useState([]);
   const [isSavingShipping, setIsSavingShipping] = useState(false);
   const [showShippingModal, setShowShippingModal] = useState(false);
-  const [shipForm, setShipForm] = useState({
-    resi: '',
-    courier: 'JNE Express',
-    dest: '',
-    epcs: '',
-    total_amount: '0',
-  });
+  const [shipForm, setShipForm] = useState(emptyShipment);
+  const shippingSources = [
+    { key: 'STOK_BEBAS', label: 'Stok Bebas', source: { type: 'STOK_BEBAS' } },
+    ...pickingOrders.filter(order => order.status !== 'DIBATALKAN'
+      && ['PICKING_ORANG1', 'OUTBOUND_PICKING'].includes(order.source_type) && order.items?.length).map(order => ({
+      key: `${order.source_type}:${order.id}`,
+      label: `${order.source_type === 'PICKING_ORANG1' ? 'Picking & Packing' : 'Picking Outbound'} · ${order.order_number}`,
+      source: { type: order.source_type, order_id: order.id },
+      epcs: order.items.map(item => item.epc).filter(Boolean),
+      resi: `RESI-${order.order_number}`,
+      destination: order.source_type === 'OUTBOUND_PICKING' ? order.destination : '',
+    })),
+    ...posOrders.filter(sale => sale.epcs?.length).map(sale => ({
+      key: `POS:${sale.id}`, label: `Penjualan POS · ${sale.invoice_or_resi}`,
+      source: { type: 'POS', sale_id: sale.id }, epcs: sale.epcs,
+    })),
+  ];
+  const shippingSource = shippingSources.find(option => option.key === shipForm.sourceKey);
 
   const fetchInventoryData = async () => {
     try {
-      const [locRes, ledRes, shipRes, tagsRes, pickRes] = await Promise.all([
+      const token = localStorage.getItem(tokenStorageKey);
+      const [locRes, ledRes, shipRes, tagsRes, boxesRes, pickRes, posRes] = await Promise.all([
         fetch(`${API_BASE_URL}/locations`),
         fetch(`${API_BASE_URL}/inventory/ledger`),
         fetch(`${API_BASE_URL}/outbound/shipments`),
         fetch(`${API_BASE_URL}/tags`).catch(() => null),
-        fetch(`${API_BASE_URL}/outbound/picking-orders`).catch(() => null),
+        fetch(`${API_BASE_URL}/boxes`).catch(() => null),
+        fetch(`${API_BASE_URL}/outbound/picking-orders?for_handoff=1`).catch(() => null),
+        activeMenu === 'pengiriman' && token
+          ? fetch(`${API_BASE_URL}/outbound/pos-orders`, { headers: { Authorization: `Bearer ${token}` } }).catch(() => null)
+          : null,
       ]);
 
       if (!locRes.ok) {
@@ -72,10 +100,15 @@ export default function InventoryLedgerPage({
         setAllTags(Array.isArray(tagsJson.data) ? tagsJson.data : []);
       }
 
-      if (pickRes && pickRes.ok) {
-        const pickJson = await pickRes.json().catch(() => ({}));
-        setPickingOrders(Array.isArray(pickJson.data) ? pickJson.data : []);
+      if (boxesRes && boxesRes.ok) {
+        const boxesJson = await boxesRes.json().catch(() => ({}));
+        setAllBoxes(Array.isArray(boxesJson.data) ? boxesJson.data : []);
       }
+
+      const pickJson = pickRes?.ok ? await pickRes.json().catch(() => ({})) : {};
+      setPickingOrders(Array.isArray(pickJson.data) ? pickJson.data : []);
+      const posJson = posRes?.ok ? await posRes.json().catch(() => ({})) : {};
+      setPosOrders(Array.isArray(posJson.data) ? posJson.data : []);
 
       if (shipRes.ok) {
         const shipJson = await shipRes.json();
@@ -106,7 +139,7 @@ export default function InventoryLedgerPage({
 
   useEffect(() => {
     fetchInventoryData();
-  }, [lastEvent]);
+  }, [lastEvent, activeMenu]);
 
   useEffect(() => {
     const firstRack = locations.find((loc) => loc.location_type === 'RACK');
@@ -223,6 +256,98 @@ export default function InventoryLedgerPage({
       showNotification?.(err.message || 'Terjadi kesalahan saat menambahkan rak.', 'error');
     } finally {
       setIsSavingRack(false);
+    }
+  };
+
+  const handleUpdateRack = async (e) => {
+    e.preventDefault();
+    if (!editingRack?.id) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations/${encodeURIComponent(editingRack.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: editingRack.code.trim(),
+          zone_code: editingRack.zone_code.trim(),
+          name: editingRack.name.trim(),
+          max_capacity: Number(editingRack.max_capacity),
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal memperbarui rak.');
+      showNotification?.(json.message || 'Rak berhasil diperbarui.', 'success');
+      setEditingRack(null);
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal memperbarui rak.', 'error');
+    } finally {
+      setRackActionBusy(false);
+    }
+  };
+
+  const handleDeleteRack = async (rack) => {
+    if (!rack?.id || rackActionBusy) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/locations/${encodeURIComponent(rack.id)}`, {
+        method: 'DELETE',
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal menghapus rak.');
+      showNotification?.(json.message || `Rak ${rack.code} berhasil dihapus.`, 'success');
+      setDeleteRackTarget(null);
+      setSelectedRackId(null);
+      setEditingRack(null);
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal menghapus rak.', 'error');
+    } finally {
+      setRackActionBusy(false);
+    }
+  };
+
+  const handleQuickMoveToRack = async (epcOrBoxEpc, targetRackCode) => {
+    if (!epcOrBoxEpc || !targetRackCode || rackActionBusy) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/inventory/putaway`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          epc: epcOrBoxEpc,
+          location_code: targetRackCode,
+          reference_doc: 'TRANSFER-ANTAR-RAK',
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal memindahkan ke rak tujuan.');
+      showNotification?.(json.message || `Berhasil dipindahkan ke rak ${targetRackCode}.`, 'success');
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal memindahkan barang/box.', 'error');
+    } finally {
+      setRackActionBusy(false);
+    }
+  };
+
+  const handleQuickUnpackBox = async (box) => {
+    if (!box?.id || rackActionBusy) return;
+    setRackActionBusy(true);
+    try {
+      const res = await fetch(`${API_BASE_URL}/boxes/${encodeURIComponent(box.id)}/unpack`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.message || 'Gagal memecah Box.');
+      showNotification?.(json.message || `Box ${box.box_code} berhasil dipecah!`, 'success');
+      await fetchInventoryData();
+    } catch (err) {
+      showNotification?.(err.message || 'Gagal memecah Box.', 'error');
+    } finally {
+      setRackActionBusy(false);
     }
   };
 
@@ -670,6 +795,10 @@ export default function InventoryLedgerPage({
 
   const handleAddShipping = async (e) => {
     e.preventDefault();
+    if (!shippingSource) {
+      showNotification?.('Pilih sumber Pengiriman terlebih dahulu.', 'error');
+      return;
+    }
 
     const epcs = shipForm.epcs
       .split(/[\n,;]+/)
@@ -679,6 +808,11 @@ export default function InventoryLedgerPage({
 
     if (!shipForm.resi.trim() || !shipForm.dest.trim() || epcs.length === 0) {
       showNotification?.('Nomor resi, tujuan, dan minimal satu EPC wajib diisi.', 'error');
+      return;
+    }
+
+    if (shippingSource.epcs && epcs.some(epc => !shippingSource.epcs.includes(epc))) {
+      showNotification?.('Daftar EPC harus berasal dari sumber Pengiriman yang dipilih.', 'error');
       return;
     }
 
@@ -698,23 +832,22 @@ export default function InventoryLedgerPage({
           courier: shipForm.courier,
           epcs,
           total_amount: totalAmount,
+          source: shippingSource.source,
         }),
       });
 
       const json = await res.json();
       if (!res.ok) {
+        if (res.status === 409 && String(json.code || '').startsWith('SHIPMENT_SOURCE_')) {
+          setShipForm(previous => ({ ...previous, sourceKey: '', epcs: '' }));
+          await fetchInventoryData();
+        }
         throw new Error(json.message || 'Gagal menyimpan pengiriman.');
       }
 
       showNotification?.(json.message || 'Pengiriman berhasil disimpan.', 'success');
       setShowShippingModal(false);
-      setShipForm({
-        resi: '',
-        courier: 'JNE Express',
-        dest: '',
-        epcs: '',
-        total_amount: '0',
-      });
+      setShipForm(emptyShipment);
       await fetchInventoryData();
     } catch (err) {
       console.error('Add outbound shipment error:', err);
@@ -788,31 +921,35 @@ export default function InventoryLedgerPage({
       <div className="space-y-6">
         <div
           data-tour="inventory-header"
-          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
         >
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Peta & Zona Lokasi Rak Gudang</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Denah kapasitas rak penyimpanan dan penempatan Putaway RFID.
-            </p>
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+              <MapPin className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight">
+                Peta & Zona Lokasi Rak Gudang
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Denah kapasitas rak penyimpanan, detail isi box/tag, dan penempatan Putaway RFID.
+              </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3.5 py-2 rounded-xl border border-blue-200">
+            <Badge variant="outline" className="h-8 px-3 text-xs">
               {rackLocations.length} Rak Terdaftar
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowRackModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition"
-            >
-              + Tambah Rak
-            </button>
+            </Badge>
+            <Button type="button" size="sm" onClick={() => setShowRackModal(true)}>
+              <Plus className="h-4 w-4" />
+              Tambah Rak
+            </Button>
           </div>
         </div>
 
         <div
           data-tour="inventory-main-section"
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
         >
           {rackLocations.map((loc) => {
             const capacity = Number(loc.max_capacity || 0);
@@ -822,79 +959,502 @@ export default function InventoryLedgerPage({
                 ? Math.min(100, Math.round((occupied / capacity) * 100))
                 : 0;
             const status = loc.capacity_status || 'Longgar';
-            const statusClass =
+            const badgeVariant =
               status === 'Padat'
-                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                ? 'destructive'
                 : status === 'Optimal'
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-blue-50 text-blue-700 border-blue-200';
+                  ? 'success'
+                  : 'secondary';
             const barClass =
               status === 'Padat'
-                ? 'bg-rose-500'
+                ? 'bg-destructive'
                 : status === 'Optimal'
                   ? 'bg-emerald-500'
-                  : 'bg-blue-600';
+                  : 'bg-primary';
 
             return (
-              <div
+              <Card
                 key={loc.id}
-                className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md transition-all"
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedRackId(loc.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedRackId(loc.id);
+                  }
+                }}
+                className="text-left hover:border-primary/50 hover:shadow-md transition-all group cursor-pointer"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono font-bold text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
-                    {loc.code}
-                  </span>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${statusClass}`}>
-                    {status}
-                  </span>
-                </div>
-                <h4 className="font-bold text-slate-900 mt-3 text-base">
-                  {loc.name}
-                </h4>
-                <p className="text-xs text-slate-500 mt-1">
-                  Zona: {loc.zone_code}
-                </p>
-                <div className="mt-5">
-                  <div className="flex justify-between text-xs text-slate-500 mb-2 gap-2">
-                    <span>Kapasitas terisi</span>
-                    <span className="font-bold text-slate-800">
-                      {occupied} / {capacity} ({pct}%)
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="outline" className="font-mono font-bold text-xs">
+                      {loc.code}
+                    </Badge>
+                    <Badge variant={badgeVariant} className="text-[11px]">
+                      {status}
+                    </Badge>
+                  </div>
+                  <CardTitle className="text-base mt-2 group-hover:text-primary transition-colors">
+                    {loc.name}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Zona: {loc.zone_code}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1.5 gap-2">
+                      <span>Kapasitas terisi</span>
+                      <span className="font-semibold text-foreground">
+                        {occupied} / {capacity} ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
+                      <div
+                        style={{ width: `${pct}%` }}
+                        className={`h-full rounded-full transition-all ${barClass}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>
+                      📦 <strong className="text-foreground">{Number(loc.box_count || 0)}</strong> Box · 🏷️{' '}
+                      <strong className="text-foreground">{Number(loc.unit_items_count || 0)}</strong> Tag
+                    </span>
+                    <span className="font-semibold text-primary group-hover:translate-x-0.5 transition-transform">
+                      Lihat Isi →
                     </span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div
-                      style={{ width: `${pct}%` }}
-                      className={`h-full rounded-full transition-all ${barClass}`}
-                    />
-                  </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             );
           })}
 
           {rackLocations.length === 0 && (
-            <div className="col-span-full bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center">
-              <p className="font-semibold text-slate-700">Belum ada rak penyimpanan.</p>
-              <p className="text-sm text-slate-500 mt-1">
+            <Card className="col-span-full border-dashed p-10 text-center">
+              <p className="font-semibold text-foreground">Belum ada rak penyimpanan.</p>
+              <p className="text-sm text-muted-foreground mt-1">
                 Tambahkan rak baru menggunakan tombol Tambah Rak.
               </p>
-            </div>
+            </Card>
           )}
         </div>
 
+        {/* Modal Detail Isi Rak (Muncul saat kartu rak diklik) */}
+        {(() => {
+          const activeRack = rackLocations.find((r) => r.id === selectedRackId);
+          if (!activeRack) return null;
+
+          const capacity = Number(activeRack.max_capacity || 0);
+          const occupied = Number(activeRack.current_items_count || 0);
+          const pct = capacity > 0 ? Math.min(100, Math.round((occupied / capacity) * 100)) : 0;
+          const productsSummary = Array.isArray(activeRack.products_summary) ? activeRack.products_summary : [];
+          const rackBoxes = Array.isArray(activeRack.boxes) ? activeRack.boxes : [];
+          const rackUnitTags = allTags.filter(
+            (t) =>
+              String(t.location_id || '') === String(activeRack.id) &&
+              ['IN_STOCK', 'RESERVED', 'AUTHORIZED_OUT'].includes(String(t.status || '').toUpperCase())
+          );
+
+          return (
+            <div
+              onClick={() => setSelectedRackId(null)}
+              className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="bg-card text-card-foreground w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl p-6 shadow-2xl border border-border space-y-5"
+              >
+                <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-mono font-bold text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
+                        {activeRack.code}
+                      </span>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700">
+                        Zona: {activeRack.zone_code}
+                      </span>
+                      <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        {activeRack.capacity_status || 'Longgar'}
+                      </span>
+                    </div>
+                    <h3 className="text-lg font-bold text-slate-900 mt-2">
+                      {activeRack.name}
+                    </h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      disabled={rackActionBusy}
+                      onClick={() =>
+                        setEditingRack(
+                          editingRack?.id === activeRack.id
+                            ? null
+                            : {
+                                id: activeRack.id,
+                                code: activeRack.code,
+                                zone_code: activeRack.zone_code,
+                                name: activeRack.name,
+                                max_capacity: String(activeRack.max_capacity || 50),
+                              }
+                        )
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition"
+                    >
+                      {editingRack?.id === activeRack.id ? 'Batal Edit' : '✏️ Edit Rak'}
+                    </button>
+                    {occupied === 0 && (
+                      <button
+                        type="button"
+                        disabled={rackActionBusy}
+                        onClick={() => setDeleteRackTarget(activeRack)}
+                        className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition"
+                      >
+                        🗑️ Hapus Rak
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedRackId(null);
+                        setEditingRack(null);
+                      }}
+                      className="text-slate-400 hover:text-slate-700 text-2xl leading-none px-2"
+                      aria-label="Tutup detail rak"
+                    >
+                      ×
+                    </button>
+                  </div>
+                </div>
+
+                {editingRack?.id === activeRack.id && (
+                  <form
+                    onSubmit={handleUpdateRack}
+                    className="p-4 rounded-xl bg-blue-50/50 border border-blue-200 space-y-3"
+                  >
+                    <p className="text-xs font-bold text-blue-900 uppercase tracking-wider">
+                      Edit Konfigurasi Rak {activeRack.code}
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Kode Rak
+                        </label>
+                        <input
+                          required
+                          value={editingRack.code}
+                          onChange={(e) => setEditingRack({ ...editingRack, code: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Kode Zona
+                        </label>
+                        <input
+                          required
+                          value={editingRack.zone_code}
+                          onChange={(e) => setEditingRack({ ...editingRack, zone_code: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Nama Rak
+                        </label>
+                        <input
+                          required
+                          value={editingRack.name}
+                          onChange={(e) => setEditingRack({ ...editingRack, name: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-600 mb-1">
+                          Kapasitas Maksimum (min. {Math.max(1, occupied)})
+                        </label>
+                        <input
+                          required
+                          type="number"
+                          min={Math.max(1, occupied)}
+                          step="1"
+                          value={editingRack.max_capacity}
+                          onChange={(e) => setEditingRack({ ...editingRack, max_capacity: e.target.value })}
+                          className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="submit"
+                        disabled={rackActionBusy}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold"
+                      >
+                        {rackActionBusy ? 'Menyimpan...' : 'Simpan Perubahan Rak'}
+                      </button>
+                    </div>
+                  </form>
+                )}
+
+                {/* Ringkasan Angka */}
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                    <p className="text-[11px] text-slate-500 font-medium">Total Terisi</p>
+                    <p className="text-base font-bold text-slate-900 mt-0.5">
+                      {occupied} / {capacity} <span className="text-xs font-normal text-slate-500">({pct}%)</span>
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-indigo-50/60 border border-indigo-200">
+                    <p className="text-[11px] text-indigo-700 font-medium">Kemasan Box</p>
+                    <p className="text-base font-bold text-indigo-900 mt-0.5">
+                      {Number(activeRack.box_count || 0)} Box{' '}
+                      <span className="text-xs font-normal text-indigo-700">
+                        ({Number(activeRack.box_units_count || 0)} unit)
+                      </span>
+                    </p>
+                  </div>
+                  <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200">
+                    <p className="text-[11px] text-blue-700 font-medium">Tag RFID Satuan</p>
+                    <p className="text-base font-bold text-blue-900 mt-0.5">
+                      {Number(activeRack.unit_items_count || 0)} Tag
+                    </p>
+                  </div>
+                </div>
+
+                {/* Daftar Produk di Rak */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                    Ringkasan Produk di Rak ({productsSummary.length} SKU)
+                  </h4>
+                  {productsSummary.length > 0 ? (
+                    <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden">
+                      {productsSummary.map((prod) => (
+                        <div
+                          key={prod.product_id || prod.sku}
+                          className="px-4 py-2.5 bg-white flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900">{prod.product_name}</p>
+                            <p className="font-mono text-[11px] text-slate-500">
+                              {prod.sku}
+                              {Number(prod.box_count) > 0
+                                ? ` · 📦 ${prod.box_count} Box (${prod.box_qty} unit)`
+                                : ''}
+                              {Number(prod.unit_qty) > 0
+                                ? ` · 🏷️ ${prod.unit_qty} Tag Satuan`
+                                : ''}
+                            </p>
+                          </div>
+                          <span className="font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg shrink-0">
+                            {prod.total_qty} unit
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs text-slate-500">
+                      Rak ini masih kosong (belum ada box maupun tag satuan).
+                    </div>
+                  )}
+                </div>
+
+                {/* Daftar Box di Rak (dengan Aksi Cepat Pecah Box & Pindah Rak) */}
+                {rackBoxes.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Daftar Box di Rak Ini ({rackBoxes.length} Box)
+                    </h4>
+                    <div className="max-h-56 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                      {rackBoxes.map((bx) => {
+                        const otherRacks = rackLocations.filter((r) => r.id !== activeRack.id);
+                        return (
+                          <div
+                            key={bx.id || bx.box_code}
+                            className="px-4 py-2.5 bg-white flex flex-wrap items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-indigo-700">
+                                  {bx.box_code}
+                                </span>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  {bx.box_level === 'MASTER' ? 'MASTER BOX' : 'INNER BOX'}
+                                </span>
+                                <span className="font-semibold text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
+                                  {bx.qty_per_box} unit
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                {bx.product_name} ({bx.sku}) · EPC: <span className="font-mono">{bx.master_epc}</span>
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                disabled={rackActionBusy}
+                                onClick={() => handleQuickUnpackBox(bx)}
+                                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold disabled:opacity-50"
+                                title="Pecah Box (Break-Pack) langsung di rak ini"
+                              >
+                                {bx.box_level === 'MASTER' ? '🔨 Pecah ke Inner' : '🔨 Pecah ke Tag'}
+                              </button>
+                              {otherRacks.length > 0 && (
+                                <select
+                                  aria-label={`Pindah ${bx.box_code} ke rak lain`}
+                                  disabled={rackActionBusy}
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleQuickMoveToRack(bx.master_epc || bx.box_code, e.target.value);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-700"
+                                >
+                                  <option value="">⇄ Pindah Rak...</option>
+                                  {otherRacks.map((r) => (
+                                    <option key={r.id} value={r.code}>
+                                      Ke {r.code} ({r.name})
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Daftar Tag RFID Satuan di Rak (dengan Aksi Cepat Pindah Rak) */}
+                {rackUnitTags.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                      Daftar Tag RFID Satuan di Rak Ini ({rackUnitTags.length} Tag)
+                    </h4>
+                    <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-xl">
+                      {rackUnitTags.map((tg) => {
+                        const otherRacks = rackLocations.filter((r) => r.id !== activeRack.id);
+                        const canTransfer = String(tg.status || '').toUpperCase() === 'IN_STOCK';
+                        return (
+                          <div
+                            key={tg.id || tg.epc}
+                            className="px-4 py-2 bg-white flex flex-wrap items-center justify-between gap-3 text-xs"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <p className="font-mono font-semibold text-slate-800">{tg.epc}</p>
+                              <p className="text-[11px] text-slate-500 truncate">
+                                {tg.product_name || '-'} ({tg.sku || '-'})
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                {tg.status}
+                              </span>
+                              {canTransfer && otherRacks.length > 0 && (
+                                <select
+                                  aria-label={`Pindah EPC ${tg.epc} ke rak lain`}
+                                  disabled={rackActionBusy}
+                                  defaultValue=""
+                                  onChange={(e) => {
+                                    if (e.target.value) {
+                                      handleQuickMoveToRack(tg.epc, e.target.value);
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                  className="px-2 py-1 rounded-lg border border-slate-200 bg-slate-50 text-[11px] font-medium text-slate-700"
+                                >
+                                  <option value="">⇄ Pindah Rak...</option>
+                                  {otherRacks.map((r) => (
+                                    <option key={r.id} value={r.code}>
+                                      Ke {r.code}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedRackId(null)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Modal Konfirmasi Hapus Rak Kosong */}
+        {deleteRackTarget && (
+          <div
+            onClick={() => !rackActionBusy && setDeleteRackTarget(null)}
+            className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-card text-card-foreground w-full max-w-md rounded-2xl p-6 shadow-2xl border border-border space-y-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0 text-lg">
+                  🗑️
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">
+                    Hapus Rak {deleteRackTarget.code}?
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Rak <strong>{deleteRackTarget.name}</strong> (Zona {deleteRackTarget.zone_code}) saat ini kosong (`0` unit) dan akan dihapus permanen dari daftar lokasi gudang.
+                  </p>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  disabled={rackActionBusy}
+                  onClick={() => setDeleteRackTarget(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition disabled:opacity-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={rackActionBusy}
+                  onClick={() => handleDeleteRack(deleteRackTarget)}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shadow-sm transition disabled:opacity-50"
+                >
+                  {rackActionBusy ? 'Menghapus...' : 'Ya, Hapus Rak'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Modal Tambah Rak */}
         {showRackModal && (
-          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl">
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-4">
+            <div className="bg-card text-card-foreground border border-border w-full max-w-lg rounded-2xl p-6 shadow-2xl">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Tambah Rak Baru</h3>
-                  <p className="text-xs text-slate-500 mt-1">Data akan disimpan ke PostgreSQL.</p>
+                  <h3 className="text-lg font-bold text-foreground">Tambah Rak Baru</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Data akan disimpan ke PostgreSQL.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowRackModal(false)}
-                  className="text-slate-400 hover:text-slate-700 text-xl"
+                  className="text-muted-foreground hover:text-foreground text-xl"
                   aria-label="Tutup modal"
                 >
                   ×
@@ -976,83 +1536,121 @@ export default function InventoryLedgerPage({
           </div>
         )}
 
-        {/* Form Putaway / Pindah Lokasi Rak (Mendukung Bulk / Pilih Semua) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h3 className="font-bold text-slate-900 text-base">
-                Putaway & Transfer Tag RFID Antar-Rak (Satuan / Massal)
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Centang banyak tag dari Staging Inbound (INB01) sekaligus atau paste daftar EPC untuk dipindah ke Rak Penyimpanan Utama.
-              </p>
-            </div>
-            {(() => {
-              const readyPutawayTags = allTags.filter(
-                (t) => String(t.status || '').toUpperCase() === 'ENCODED'
-              );
-              if (readyPutawayTags.length === 0) return null;
-              return (
-                <div className="flex items-center gap-2 text-xs shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedPutawayEpcs(readyPutawayTags.map((t) => t.epc))}
-                    className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold transition"
-                  >
-                    Pilih Semua ({readyPutawayTags.length})
-                  </button>
-                  {selectedPutawayEpcs.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedPutawayEpcs([])}
-                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition"
-                    >
-                      Batal ({selectedPutawayEpcs.length})
-                    </button>
+        {/* Form Putaway / Pindah Lokasi Rak (Mendukung Tag Satuan & Box Massal) */}
+        <Card className="p-6 space-y-4">
+          {(() => {
+            const readyPutawayTags = allTags
+              .filter((t) => String(t.status || '').toUpperCase() === 'ENCODED')
+              .map((t) => ({
+                key: t.id || t.epc,
+                code: t.epc,
+                isBox: false,
+                label: t.epc,
+                sublabel: `${t.sku || ''} ${t.product_name || 'Tag ENCODED'}`.trim(),
+                badge: 'TAG',
+              }));
+            const readyPutawayBoxes = allBoxes
+              .filter((b) => ['SEALED', 'IN_RACK'].includes(String(b.status || '').toUpperCase()))
+              .map((b) => ({
+                key: b.id || b.box_code,
+                code: b.master_epc || b.box_code,
+                isBox: true,
+                label: `${b.box_code} (${b.product_name || b.sku})`,
+                sublabel: `EPC: ${b.master_epc} · ${b.qty_per_box} unit · ${b.location_code ? `Rak ${b.location_code}` : 'Staging INB01'}`,
+                badge: b.box_level === 'MASTER' ? 'MASTER BOX' : 'INNER BOX',
+              }));
+            const allPutawayCandidates = [...readyPutawayBoxes, ...readyPutawayTags];
+
+            return (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">
+                      Putaway & Transfer Tag RFID / Box Antar-Rak (Satuan / Massal)
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Centang Box (Master/Inner Box) atau Tag RFID dari Staging Inbound (INB01) maupun pindah rak untuk ditempatkan ke Rak Penyimpanan Utama.
+                    </p>
+                  </div>
+                  {allPutawayCandidates.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-2 text-xs shrink-0">
+                      {readyPutawayBoxes.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPutawayEpcs(readyPutawayBoxes.map((b) => b.code))}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-semibold transition"
+                        >
+                          Pilih Semua Box ({readyPutawayBoxes.length})
+                        </button>
+                      )}
+                      {readyPutawayTags.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPutawayEpcs(readyPutawayTags.map((t) => t.code))}
+                          className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold transition"
+                        >
+                          Pilih Semua Tag ({readyPutawayTags.length})
+                        </button>
+                      )}
+                      {selectedPutawayEpcs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPutawayEpcs([])}
+                          className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold transition"
+                        >
+                          Batal ({selectedPutawayEpcs.length})
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              );
-            })()}
-          </div>
 
-          {(() => {
-            const readyPutawayTags = allTags.filter(
-              (t) => String(t.status || '').toUpperCase() === 'ENCODED'
-            );
-            if (readyPutawayTags.length === 0) return null;
-            return (
-              <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {readyPutawayTags.map((t) => {
-                  const checked = selectedPutawayEpcs.includes(t.epc);
-                  return (
-                    <label
-                      key={t.id || t.epc}
-                      className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition ${
-                        checked
-                          ? 'bg-blue-50 border-blue-300 text-blue-900'
-                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() =>
-                          setSelectedPutawayEpcs((prev) =>
-                            checked ? prev.filter((e) => e !== t.epc) : [...prev, t.epc]
-                          )
-                        }
-                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="font-mono font-semibold truncate">{t.epc}</p>
-                        <p className="text-[10px] text-slate-500 truncate">
-                          {t.sku || t.product_name || 'Tag ENCODED'}
-                        </p>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
+                {allPutawayCandidates.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl p-2.5 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {allPutawayCandidates.map((item) => {
+                      const checked = selectedPutawayEpcs.includes(item.code);
+                      return (
+                        <label
+                          key={item.key}
+                          className={`flex items-center gap-2 p-2 rounded-lg border cursor-pointer text-xs transition ${
+                            checked
+                              ? 'bg-blue-50 border-blue-300 text-blue-900'
+                              : item.isBox
+                              ? 'bg-indigo-50/40 border-indigo-200 text-slate-800 hover:border-indigo-300'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() =>
+                              setSelectedPutawayEpcs((prev) =>
+                                checked ? prev.filter((e) => e !== item.code) : [...prev, item.code]
+                              )
+                            }
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <p className="font-mono font-semibold truncate">{item.label}</p>
+                              <span
+                                className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                                  item.isBox
+                                    ? 'bg-indigo-100 text-indigo-700'
+                                    : 'bg-slate-200 text-slate-700'
+                                }`}
+                              >
+                                {item.badge}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 truncate">{item.sublabel}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             );
           })()}
 
@@ -1064,16 +1662,16 @@ export default function InventoryLedgerPage({
               onChange={(e) => setEpcCode(e.target.value)}
               placeholder={
                 selectedPutawayEpcs.length > 0
-                  ? `${selectedPutawayEpcs.length} EPC terpilih (opsional tambah manual)`
-                  : 'Kode EPC Tag RFID (bisa pisah koma)'
+                  ? `${selectedPutawayEpcs.length} Tag/Box terpilih (opsional tambah manual)`
+                  : 'Kode EPC Tag / Master EPC Box / Kode Box (bisa pisah koma)'
               }
-              className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-mono text-foreground shadow-sm"
             />
             <select
               required
               value={targetLoc}
               onChange={(e) => setTargetLoc(e.target.value)}
-              className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm"
             >
               <option value="">Pilih rak tujuan</option>
               {rackLocations.map((l) => (
@@ -1082,19 +1680,19 @@ export default function InventoryLedgerPage({
                 </option>
               ))}
             </select>
-            <button
+            <Button
               type="submit"
               disabled={rackLocations.length === 0 || isBulkPutaway}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-md transition"
+              className="w-full"
             >
               {isBulkPutaway
                 ? 'Memproses Putaway...'
                 : selectedPutawayEpcs.length > 0
                 ? `Simpan ${selectedPutawayEpcs.length} Tag ke Rak`
                 : 'Simpan Putaway Rak'}
-            </button>
+            </Button>
           </form>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -1333,10 +1931,10 @@ export default function InventoryLedgerPage({
         </div>
 
         {showShippingModal && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-slate-100">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+            <div className="bg-card text-card-foreground rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-border">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-slate-900">
+                <h3 className="font-bold text-lg text-foreground">
                   Buat Pengiriman & Gate Pass Baru
                 </h3>
                 <button
@@ -1347,55 +1945,39 @@ export default function InventoryLedgerPage({
                 </button>
               </div>
               <form onSubmit={handleAddShipping} className="space-y-4">
-                {pickingOrders.length > 0 && (
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                    <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
-                      Tarik Otomatis dari Order Picking & Packing (Opsional)
-                    </label>
+                <label className="block p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <span className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
+                      Sumber Pengiriman
+                    </span>
                     <select
-                      defaultValue=""
+                      required
+                      value={shippingSource?.key || ''}
+                      disabled={isSavingShipping}
                       onChange={(e) => {
-                        const ord = pickingOrders.find((o) => String(o.id) === e.target.value);
-                        if (!ord) return;
-                        const epcsFromOrder = Array.isArray(ord.epcs)
-                          ? ord.epcs
-                          : Array.isArray(ord.items)
-                          ? ord.items.map((it) => it.epc).filter(Boolean)
-                          : [];
+                        const next = shippingSources.find(option => option.key === e.target.value);
                         setShipForm((prev) => ({
                           ...prev,
-                          resi: prev.resi || `RESI-${ord.order_number || String(ord.id).slice(0, 6).toUpperCase()}`,
-                          dest:
-                            ord.customer_or_destination &&
-                            !['MENUNGGU_PICKING', 'SEDANG_DIAMBIL', 'SIAP_PACKING', 'SELESAI_PACKING', 'MENUNGGU_PACKING'].includes(
-                              String(ord.customer_or_destination).toUpperCase()
-                            )
-                              ? ord.customer_or_destination
-                              : prev.dest || `Pelanggan ${ord.order_number || ''}`,
-                          epcs: epcsFromOrder.length > 0 ? epcsFromOrder.join('\n') : prev.epcs,
+                          sourceKey: next?.key ?? '',
+                          resi: next?.resi ?? '',
+                          dest: next?.destination ?? '',
+                          epcs: next?.epcs?.join('\n') ?? '',
+                          total_amount: '0',
                         }));
                       }}
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-lg text-xs"
                     >
-                      <option value="">-- Pilih Order Picking untuk isi Resi & EPC otomatis --</option>
-                      {pickingOrders.map((ord) => {
-                        const itemCount = Array.isArray(ord.items) ? ord.items.length : Number(ord.scanned_items || 0);
-                        return (
-                          <option key={ord.id} value={ord.id}>
-                            {ord.order_number || ord.invoice_or_resi || ord.id} — Status: {ord.status} ({itemCount} EPC ter-scan)
-                          </option>
-                        );
-                      })}
+                      <option value="">Pilih sumber</option>
+                      {shippingSources.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
                     </select>
-                  </div>
-                )}
+                </label>
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                    <label htmlFor="outbound-resi" className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                       No. Resi / Surat Jalan
                     </label>
                     <input
+                      id="outbound-resi"
                       type="text"
                       required
                       value={shipForm.resi}
@@ -1420,10 +2002,11 @@ export default function InventoryLedgerPage({
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-600 uppercase mb-1">
+                  <label htmlFor="outbound-destination" className="block text-xs font-semibold text-slate-600 uppercase mb-1">
                     Tujuan / Nama Pelanggan
                   </label>
                   <input
+                    id="outbound-destination"
                     type="text"
                     required
                     placeholder="PT Sentosa Computer (Surabaya)"
@@ -1434,13 +2017,28 @@ export default function InventoryLedgerPage({
                 </div>
                 <div>
                   {(() => {
-                    const shippableTags = allTags.filter((t) =>
-                      ['AUTHORIZED_OUT', 'RESERVED', 'IN_STOCK'].includes(
-                        String(t.status || '').toUpperCase()
-                      )
-                    );
+                    const tagsByEpc = new Map(allTags.map(tag => [tag.epc, tag]));
+                    const shippableTags = shippingSource?.source.type === 'STOK_BEBAS'
+                      ? [
+                          ...allBoxes
+                            .filter(b => b.status === 'IN_RACK')
+                            .map(b => ({
+                              id: b.id,
+                              epc: b.master_epc,
+                              displayCode: `${b.box_code} (${b.product_name || b.sku} · ${b.qty_per_box}u)`,
+                              status: 'BOX IN_RACK',
+                              isBox: true,
+                            })),
+                          ...allTags
+                            .filter(tag => tag.status === 'IN_STOCK')
+                            .map(tag => ({
+                              ...tag,
+                              displayCode: `${tag.epc}${tag.product_name ? ` (${tag.product_name})` : ''}`,
+                            })),
+                        ]
+                      : (shippingSource?.epcs ?? []).map(epc => tagsByEpc.get(epc) ?? { epc });
                     const currentEpcs = shipForm.epcs
-                      .split(/[\n,]+/)
+                      .split(/[\n,;]+/)
                       .map((s) => s.trim())
                       .filter(Boolean);
                     return (
@@ -1497,7 +2095,7 @@ export default function InventoryLedgerPage({
                                       className="rounded border-slate-300 text-blue-600"
                                     />
                                     <span className="font-mono font-semibold text-slate-800 truncate">
-                                      {t.epc}
+                                      {t.displayCode || t.epc}
                                     </span>
                                   </div>
                                   <span
@@ -1520,6 +2118,8 @@ export default function InventoryLedgerPage({
                   <textarea
                     required
                     rows={3}
+                    aria-label="EPC Pengiriman"
+                    disabled={!shippingSource || isSavingShipping}
                     value={shipForm.epcs}
                     onChange={(e) => setShipForm({ ...shipForm, epcs: e.target.value })}
                     placeholder="Atau paste banyak EPC (pisahkan baris baru atau koma)..."
@@ -1555,7 +2155,7 @@ export default function InventoryLedgerPage({
                   </button>
                   <button
                     type="submit"
-                    disabled={isSavingShipping}
+                    disabled={isSavingShipping || !shippingSource}
                     className="px-5 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-sm font-medium shadow-md disabled:opacity-60"
                   >
                     {isSavingShipping ? 'Menyimpan...' : 'Terbitkan & Simpan'}
