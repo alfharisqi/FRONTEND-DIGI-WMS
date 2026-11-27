@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Download, FileText, Plus, Printer, Send } from 'lucide-react';
+import { Download, FileText, MapPin, Plus, Printer, Send } from 'lucide-react';
 import { API_BASE_URL } from '../../config/api';
 import { tokenStorageKey } from '../../config/authSession';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 const emptyShipment = {
   sourceKey: '', resi: '', courier: 'JNE Express', dest: '', epcs: '', total_amount: '0',
@@ -920,31 +921,35 @@ export default function InventoryLedgerPage({
       <div className="space-y-6">
         <div
           data-tour="inventory-header"
-          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm"
+          className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"
         >
-          <div>
-            <h2 className="text-xl font-bold text-slate-900">Peta & Zona Lokasi Rak Gudang</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              Denah kapasitas rak penyimpanan dan penempatan Putaway RFID.
-            </p>
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
+              <MapPin className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight">
+                Peta & Zona Lokasi Rak Gudang
+              </h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Denah kapasitas rak penyimpanan, detail isi box/tag, dan penempatan Putaway RFID.
+              </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="bg-blue-50 text-blue-700 text-xs font-semibold px-3.5 py-2 rounded-xl border border-blue-200">
+            <Badge variant="outline" className="h-8 px-3 text-xs">
               {rackLocations.length} Rak Terdaftar
-            </span>
-            <button
-              type="button"
-              onClick={() => setShowRackModal(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow-sm transition"
-            >
-              + Tambah Rak
-            </button>
+            </Badge>
+            <Button type="button" size="sm" onClick={() => setShowRackModal(true)}>
+              <Plus className="h-4 w-4" />
+              Tambah Rak
+            </Button>
           </div>
         </div>
 
         <div
           data-tour="inventory-main-section"
-          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
         >
           {rackLocations.map((loc) => {
             const capacity = Number(loc.max_capacity || 0);
@@ -954,75 +959,86 @@ export default function InventoryLedgerPage({
                 ? Math.min(100, Math.round((occupied / capacity) * 100))
                 : 0;
             const status = loc.capacity_status || 'Longgar';
-            const statusClass =
+            const badgeVariant =
               status === 'Padat'
-                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                ? 'destructive'
                 : status === 'Optimal'
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-blue-50 text-blue-700 border-blue-200';
+                  ? 'success'
+                  : 'secondary';
             const barClass =
               status === 'Padat'
-                ? 'bg-rose-500'
+                ? 'bg-destructive'
                 : status === 'Optimal'
                   ? 'bg-emerald-500'
-                  : 'bg-blue-600';
+                  : 'bg-primary';
 
             return (
-              <button
-                type="button"
+              <Card
                 key={loc.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => setSelectedRackId(loc.id)}
-                className="text-left bg-white p-5 rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-300 transition-all group cursor-pointer"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setSelectedRackId(loc.id);
+                  }
+                }}
+                className="text-left hover:border-primary/50 hover:shadow-md transition-all group cursor-pointer"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono font-bold text-sm text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg">
-                    {loc.code}
-                  </span>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-lg border ${statusClass}`}>
-                    {status}
-                  </span>
-                </div>
-                <h4 className="font-bold text-slate-900 mt-3 text-base group-hover:text-blue-700 transition-colors">
-                  {loc.name}
-                </h4>
-                <p className="text-xs text-slate-500 mt-1">
-                  Zona: {loc.zone_code}
-                </p>
-                <div className="mt-5">
-                  <div className="flex justify-between text-xs text-slate-500 mb-2 gap-2">
-                    <span>Kapasitas terisi</span>
-                    <span className="font-bold text-slate-800">
-                      {occupied} / {capacity} ({pct}%)
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <Badge variant="outline" className="font-mono font-bold text-xs">
+                      {loc.code}
+                    </Badge>
+                    <Badge variant={badgeVariant} className="text-[11px]">
+                      {status}
+                    </Badge>
+                  </div>
+                  <CardTitle className="text-base mt-2 group-hover:text-primary transition-colors">
+                    {loc.name}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Zona: {loc.zone_code}
+                  </p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div>
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1.5 gap-2">
+                      <span>Kapasitas terisi</span>
+                      <span className="font-semibold text-foreground">
+                        {occupied} / {capacity} ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-muted h-2 rounded-full overflow-hidden">
+                      <div
+                        style={{ width: `${pct}%` }}
+                        className={`h-full rounded-full transition-all ${barClass}`}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-2.5 border-t border-border flex items-center justify-between text-[11px] text-muted-foreground">
+                    <span>
+                      📦 <strong className="text-foreground">{Number(loc.box_count || 0)}</strong> Box · 🏷️{' '}
+                      <strong className="text-foreground">{Number(loc.unit_items_count || 0)}</strong> Tag
+                    </span>
+                    <span className="font-semibold text-primary group-hover:translate-x-0.5 transition-transform">
+                      Lihat Isi →
                     </span>
                   </div>
-                  <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                    <div
-                      style={{ width: `${pct}%` }}
-                      className={`h-full rounded-full transition-all ${barClass}`}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                  <span>
-                    📦 <strong className="text-slate-700">{Number(loc.box_count || 0)}</strong> Box · 🏷️{' '}
-                    <strong className="text-slate-700">{Number(loc.unit_items_count || 0)}</strong> Tag
-                  </span>
-                  <span className="font-semibold text-blue-600 group-hover:translate-x-0.5 transition-transform">
-                    Lihat Isi →
-                  </span>
-                </div>
-              </button>
+                </CardContent>
+              </Card>
             );
           })}
 
           {rackLocations.length === 0 && (
-            <div className="col-span-full bg-white border border-dashed border-slate-300 rounded-2xl p-10 text-center">
-              <p className="font-semibold text-slate-700">Belum ada rak penyimpanan.</p>
-              <p className="text-sm text-slate-500 mt-1">
+            <Card className="col-span-full border-dashed p-10 text-center">
+              <p className="font-semibold text-foreground">Belum ada rak penyimpanan.</p>
+              <p className="text-sm text-muted-foreground mt-1">
                 Tambahkan rak baru menggunakan tombol Tambah Rak.
               </p>
-            </div>
+            </Card>
           )}
         </div>
 
@@ -1049,7 +1065,7 @@ export default function InventoryLedgerPage({
             >
               <div
                 onClick={(e) => e.stopPropagation()}
-                className="bg-white w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl p-6 shadow-2xl border border-slate-200 space-y-5"
+                className="bg-card text-card-foreground w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl p-6 shadow-2xl border border-border space-y-5"
               >
                 <div className="flex items-start justify-between gap-4 border-b border-slate-100 pb-4">
                   <div>
@@ -1389,7 +1405,7 @@ export default function InventoryLedgerPage({
           >
             <div
               onClick={(e) => e.stopPropagation()}
-              className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl border border-slate-200 space-y-4"
+              className="bg-card text-card-foreground w-full max-w-md rounded-2xl p-6 shadow-2xl border border-border space-y-4"
             >
               <div className="flex items-start gap-3">
                 <div className="h-10 w-10 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 flex items-center justify-center shrink-0 text-lg">
@@ -1428,17 +1444,17 @@ export default function InventoryLedgerPage({
 
         {/* Modal Tambah Rak */}
         {showRackModal && (
-          <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-white w-full max-w-lg rounded-2xl p-6 shadow-2xl">
+          <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-4">
+            <div className="bg-card text-card-foreground border border-border w-full max-w-lg rounded-2xl p-6 shadow-2xl">
               <div className="flex items-center justify-between mb-5">
                 <div>
-                  <h3 className="text-lg font-bold text-slate-900">Tambah Rak Baru</h3>
-                  <p className="text-xs text-slate-500 mt-1">Data akan disimpan ke PostgreSQL.</p>
+                  <h3 className="text-lg font-bold text-foreground">Tambah Rak Baru</h3>
+                  <p className="text-xs text-muted-foreground mt-1">Data akan disimpan ke PostgreSQL.</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setShowRackModal(false)}
-                  className="text-slate-400 hover:text-slate-700 text-xl"
+                  className="text-muted-foreground hover:text-foreground text-xl"
                   aria-label="Tutup modal"
                 >
                   ×
@@ -1521,7 +1537,7 @@ export default function InventoryLedgerPage({
         )}
 
         {/* Form Putaway / Pindah Lokasi Rak (Mendukung Tag Satuan & Box Massal) */}
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
+        <Card className="p-6 space-y-4">
           {(() => {
             const readyPutawayTags = allTags
               .filter((t) => String(t.status || '').toUpperCase() === 'ENCODED')
@@ -1649,13 +1665,13 @@ export default function InventoryLedgerPage({
                   ? `${selectedPutawayEpcs.length} Tag/Box terpilih (opsional tambah manual)`
                   : 'Kode EPC Tag / Master EPC Box / Kode Box (bisa pisah koma)'
               }
-              className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-mono text-foreground shadow-sm"
             />
             <select
               required
               value={targetLoc}
               onChange={(e) => setTargetLoc(e.target.value)}
-              className="px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm"
+              className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm"
             >
               <option value="">Pilih rak tujuan</option>
               {rackLocations.map((l) => (
@@ -1664,19 +1680,19 @@ export default function InventoryLedgerPage({
                 </option>
               ))}
             </select>
-            <button
+            <Button
               type="submit"
               disabled={rackLocations.length === 0 || isBulkPutaway}
-              className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white font-semibold py-2.5 px-4 rounded-xl text-sm shadow-md transition"
+              className="w-full"
             >
               {isBulkPutaway
                 ? 'Memproses Putaway...'
                 : selectedPutawayEpcs.length > 0
                 ? `Simpan ${selectedPutawayEpcs.length} Tag ke Rak`
                 : 'Simpan Putaway Rak'}
-            </button>
+            </Button>
           </form>
-        </div>
+        </Card>
       </div>
     );
   }
@@ -1915,10 +1931,10 @@ export default function InventoryLedgerPage({
         </div>
 
         {showShippingModal && (
-          <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-slate-100">
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-[2px] z-50 flex items-center justify-center p-4">
+            <div className="bg-card text-card-foreground rounded-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 shadow-2xl border border-border">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="font-bold text-lg text-slate-900">
+                <h3 className="font-bold text-lg text-foreground">
                   Buat Pengiriman & Gate Pass Baru
                 </h3>
                 <button

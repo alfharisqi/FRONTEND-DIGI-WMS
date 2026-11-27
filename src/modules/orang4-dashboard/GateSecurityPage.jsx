@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Ban, CheckCircle2, Printer, ShieldCheck } from 'lucide-react';
+import { Ban, CheckCircle2, Plus, Printer, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { API_BASE_URL } from '../../config/api';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
 export default function GateSecurityPage({
   switchTab,
@@ -427,119 +428,99 @@ export default function GateSecurityPage({
       {/* ================= HEADER SECTION ================= */}
       <div
         data-tour="gate-security-header"
-        className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 bg-white p-5 sm:p-6 rounded-2xl border border-slate-200/80 shadow-sm"
+        className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4"
       >
         <div className="flex items-start gap-3">
           <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-muted/50 text-foreground">
             <ShieldCheck className="h-4 w-4" />
           </div>
           <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-2xl font-bold tracking-tight">
-                Portal Keamanan Gerbang & Gate Pass
-              </h1>
-            </div>
+            <h1 className="text-2xl font-bold tracking-tight">
+              Portal Keamanan Gerbang & Gate Pass
+            </h1>
             <p className="text-sm text-muted-foreground mt-0.5">
               Pemeriksaan otorisasi digital pas jalan (Gate Pass), validasi RFID anti-theft sebelum kendaraan keluar, dan pencatatan audit gerbang.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            size="sm"
             onClick={() => setShowGenerateModal(true)}
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold shadow-sm shadow-blue-600/20 transition inline-flex items-center space-x-1.5"
           >
-            <span>➕</span>
-            <span>Terbitkan Gate Pass Manual</span>
-          </button>
-          <button
+            <Plus className="h-4 w-4" />
+            Terbitkan Gate Pass
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
             onClick={handleTriggerAlarmBreach}
             disabled={simulatingBreach}
-            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 rounded-xl text-xs font-semibold shadow-sm transition inline-flex items-center space-x-1.5"
             title="Simulasikan Barang Tanpa Izin Melintas Portal"
           >
-            <span>🚨</span>
-            <span>{simulatingBreach ? 'Memproses...' : 'Uji Alarm Breach'}</span>
-          </button>
-          <button
+            <ShieldAlert className="h-4 w-4" />
+            {simulatingBreach ? 'Memproses...' : 'Uji Alarm Breach'}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
             onClick={fetchData}
-            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition"
             title="Muat Ulang Data"
           >
-            🔄
-          </button>
+            <RefreshCw className="h-4 w-4" />
+            Refresh
+          </Button>
         </div>
       </div>
 
       {/* ================= 3 KPI STATS CARDS ================= */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Gate Pass Aktif</span>
-            <div className="mt-1 flex items-baseline space-x-2">
-              <span className="text-2xl font-black text-emerald-600">{totalActive}</span>
-              <span className="text-xs text-slate-500">Izin Sah Siap Keluar</span>
-            </div>
-          </div>
-          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-2xl text-emerald-600">
-            ✅
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Gate Pass Aktif</CardTitle>
+            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{totalActive}</div>
+            <p className="text-xs text-muted-foreground">Izin sah siap keluar</p>
+          </CardContent>
+        </Card>
 
-        <div className="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
-          <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Telah Keluar (Used)</span>
-            <div className="mt-1 flex items-baseline space-x-2">
-              <span className="text-2xl font-black text-slate-700">{totalUsed}</span>
-              <span className="text-xs text-slate-500">Tercatat Melintasi Gerbang</span>
-            </div>
-          </div>
-          <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center text-2xl text-slate-600">
-            🚚
-          </div>
-        </div>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Telah Keluar (Used)</CardTitle>
+            <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{totalUsed}</div>
+            <p className="text-xs text-muted-foreground">Tercatat melintasi gerbang</p>
+          </CardContent>
+        </Card>
 
-        <div
-          className={`p-5 rounded-2xl border shadow-sm flex items-center justify-between ${
-            totalUnauthorized > 0
-              ? 'bg-rose-50/70 border-rose-200'
-              : 'bg-white border-slate-200/80'
-          }`}
-        >
-          <div>
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Status Portal Keamanan</span>
-            <div className="mt-1 flex items-baseline space-x-2">
-              <span
-                className={`text-base font-bold ${
-                  totalUnauthorized > 0 ? 'text-rose-700' : 'text-slate-900'
-                }`}
-              >
-                {totalUnauthorized > 0 ? 'WASPADA BREACH' : 'SIAGA NORMAL'}
-              </span>
-              <span
-                className={`text-xs font-semibold ${
-                  totalUnauthorized > 0 ? 'text-rose-600' : 'text-emerald-600'
-                }`}
-              >
-                {totalUnauthorized > 0 ? `• ${totalUnauthorized} Insiden` : '• 100% Aman'}
-              </span>
+        <Card className={totalUnauthorized > 0 ? 'border-destructive/50 bg-destructive/5' : ''}>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Status Portal Keamanan</CardTitle>
+            <ShieldAlert className={`h-4 w-4 ${totalUnauthorized > 0 ? 'text-destructive' : 'text-emerald-500'}`} />
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${totalUnauthorized > 0 ? 'text-destructive' : ''}`}>
+              {totalUnauthorized > 0 ? 'WASPADA BREACH' : 'SIAGA NORMAL'}
             </div>
-          </div>
-          <div
-            className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl ${
-              totalUnauthorized > 0 ? 'bg-rose-100 text-rose-600' : 'bg-blue-50 text-blue-600'
-            }`}
-          >
-            {totalUnauthorized > 0 ? '🚨' : '🛡️'}
-          </div>
-        </div>
+            <p className="text-xs text-muted-foreground">
+              {totalUnauthorized > 0 ? `${totalUnauthorized} insiden terdeteksi` : 'Portal aman · 100% terkendali'}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* ================= CORE VERIFICATION SCANNER ================= */}
-      <div
+      <Card
         data-tour="gate-security-scanner"
-        className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden"
+        className="overflow-hidden"
       >
         <div className="px-6 py-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center space-x-2.5">
@@ -842,7 +823,7 @@ export default function GateSecurityPage({
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* ================= TABEL RIWAYAT GATE PASS (TanStack DataTable) ================= */}
       <div data-tour="gate-security-list" className="space-y-3">
@@ -1181,8 +1162,8 @@ export default function GateSecurityPage({
 
       {/* ================= MODAL GENERATE GATE PASS MANUAL ================= */}
       {showGenerateModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-4">
+          <div className="bg-card text-card-foreground w-full max-w-md rounded-2xl shadow-2xl border border-border overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
               <div className="flex items-center space-x-2">
                 <span>➕</span>
