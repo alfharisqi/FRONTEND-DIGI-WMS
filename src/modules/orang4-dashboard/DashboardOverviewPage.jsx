@@ -1531,186 +1531,188 @@ export default function DashboardOverviewPage({
   }
 
   // ============================================================================
-  // MENU 4: PENGATURAN SISTEM DIGI WMS (Persis Template Awal digiwms.html + EMQX)
+  // MENU 4: PENGATURAN SISTEM DIGI WMS (Tersimpan Permanen di DB + Shadcn UI)
   // ============================================================================
   if (activeMenu === 'pengaturan') {
     return (
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-slate-900">Pengaturan Sistem DIGI WMS</h2>
-              <p className="text-xs text-slate-500 mt-1">
-                Sesuaikan preferensi gudang, integrasi API, dan frekuensi RFID.
-              </p>
-            </div>
-            <span
-              className={`text-xs font-bold px-3 py-1 rounded-full ${
-                isAdminOrSupervisor
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-amber-50 text-amber-700 border border-amber-200'
-              }`}
-            >
-              {isAdminOrSupervisor ? '🔓 Akses Admin/Supervisor' : '🔒 Mode Baca (Read-Only)'}
-            </span>
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">Pengaturan Sistem DIGI WMS</h2>
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Konfigurasi gudang, parameter frekuensi UHF RFID, dan diagnostik broker EMQX MQTT.
+            </p>
           </div>
+          <Badge variant={isAdminOrSupervisor ? 'success' : 'secondary'}>
+            {isAdminOrSupervisor ? '🔓 Akses Admin / Supervisor' : '🔒 Mode Baca (Read-Only)'}
+          </Badge>
+        </div>
 
-          {!isAdminOrSupervisor && (
-            <div className="mt-4 p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
-              <b>Proteksi Keamanan RBAC:</b> Sesi Anda saat ini adalah{' '}
-              <b>{currentUser?.full_name} ({currentUser?.role})</b>. Pengubahan daya antena UHF RFID dan parameter gudang dikunci khusus untuk <b>ADMIN / SUPERVISOR</b>.
-            </div>
-          )}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Preferensi Gudang & Antena RFID</CardTitle>
+              <CardDescription>
+                Perubahan disimpan permanen ke database PostgreSQL.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {!isAdminOrSupervisor && (
+                <div className="mb-4 p-3.5 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-amber-800 dark:text-amber-300">
+                  <b>Proteksi Keamanan RBAC:</b> Sesi Anda saat ini adalah{' '}
+                  <b>{currentUser?.full_name} ({currentUser?.role})</b>. Pengubahan daya antena UHF RFID dan parameter gudang dikunci khusus untuk <b>ADMIN / SUPERVISOR</b>.
+                </div>
+              )}
 
-          {settings && (
-            <form onSubmit={handleSaveSettings} className="mt-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Nama Gudang Utama
-                </label>
-                <input
-                  type="text"
-                  disabled={!isAdminOrSupervisor}
-                  value={settings.warehouse_name}
-                  onChange={(e) => setSettings({ ...settings, warehouse_name: e.target.value })}
-                  className="mt-1 w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-60"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
+              {settings && (
+                <form onSubmit={handleSaveSettings} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1.5">
+                      Nama Gudang Utama
+                    </label>
+                    <input
+                      type="text"
+                      disabled={!isAdminOrSupervisor}
+                      value={settings.warehouse_name}
+                      onChange={(e) => setSettings({ ...settings, warehouse_name: e.target.value })}
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:opacity-60"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1.5">
+                        Frekuensi UHF RFID
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.rfid_frequency || '920 - 923 MHz (Indonesia)'}
+                        readOnly
+                        className="flex h-9 w-full rounded-md border border-input bg-muted px-3 py-1 text-sm text-muted-foreground"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1.5">
+                        Daya Pancar Antena ({settings.rfid_gate_power_dbm} dBm)
+                      </label>
+                      <input
+                        type="range"
+                        min="15"
+                        max="33"
+                        disabled={!isAdminOrSupervisor}
+                        value={settings.rfid_gate_power_dbm}
+                        onChange={(e) =>
+                          setSettings({ ...settings, rfid_gate_power_dbm: Number(e.target.value) })
+                        }
+                        className="mt-2 w-full accent-primary disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1.5">
+                      Mode Anti-Collision Reader
+                    </label>
+                    <select
+                      disabled={!isAdminOrSupervisor}
+                      value={settings.anti_collision_mode}
+                      onChange={(e) =>
+                        setSettings({ ...settings, anti_collision_mode: e.target.value })
+                      }
+                      className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm focus-visible:outline-none disabled:opacity-60"
+                    >
+                      <option value="Dense Reader Mode (M=4) - EPCglobal Gen2">
+                        Dense Reader Mode (M=4) - EPCglobal Gen2
+                      </option>
+                      <option value="Fast Tag Read Mode (M=2) - High Speed Conveyor">
+                        Fast Tag Read Mode (M=2) - High Speed Conveyor
+                      </option>
+                    </select>
+                  </div>
+                  <div className="pt-1">
+                    <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1.5">
+                      Notifikasi Stok Minimum & Alarm Gate Otomatis
+                    </label>
+                    <div className="flex items-center space-x-2.5">
+                      <input
+                        type="checkbox"
+                        id="notif-toggle"
+                        disabled={!isAdminOrSupervisor}
+                        checked={settings.alarm_siren_enabled}
+                        onChange={(e) =>
+                          setSettings({ ...settings, alarm_siren_enabled: e.target.checked })
+                        }
+                        className="h-4 w-4 rounded border-input accent-primary"
+                      />
+                      <label htmlFor="notif-toggle" className="text-sm text-foreground">
+                        Aktifkan peringatan stok kritis & sirine GPIO gerbang keluar
+                      </label>
+                    </div>
+                  </div>
+                  <Button
+                    type="submit"
+                    disabled={savingSettings || !isAdminOrSupervisor}
+                  >
+                    {savingSettings ? 'Menyimpan...' : 'Simpan Perubahan'}
+                  </Button>
+                </form>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Panel Uji Pancar EMQX MQTT Broker */}
+          <Card className="flex flex-col justify-between">
+            <CardHeader>
+              <Badge variant="outline" className="w-fit mb-1">
+                EMQX MQTT Broker Diagnostic
+              </Badge>
+              <CardTitle className="text-base">Simulator Pancaran Hardware ke MQTT</CardTitle>
+              <CardDescription>
+                Uji kirim paket JSON dari Backend ke topik EMQX (TCP 1883 → WebSocket 8083) secara real-time.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <form onSubmit={handleTestMqttPublish} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Frekuensi UHF RFID
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1.5">
+                    Topik MQTT Tujuan
+                  </label>
+                  <select
+                    value={testTopic}
+                    onChange={(e) => setTestTopic(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm text-foreground shadow-sm"
+                  >
+                    <option value="digiwms/rfid/gate-alarm">digiwms/rfid/gate-alarm</option>
+                    <option value="digiwms/rfid/encoded">digiwms/rfid/encoded</option>
+                    <option value="digiwms/ledger/updated">digiwms/ledger/updated</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1.5">
+                    Kode EPC Uji Coba
                   </label>
                   <input
                     type="text"
-                    value="920 - 923 MHz (Indonesia)"
-                    readOnly
-                    className="mt-1 w-full px-4 py-2 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-600"
+                    value={testEpc}
+                    onChange={(e) => setTestEpc(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm font-mono text-emerald-600 dark:text-emerald-400 shadow-sm"
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700">
-                    Daya Pancar Antena ({settings.rfid_gate_power_dbm} dBm)
-                  </label>
-                  <input
-                    type="range"
-                    min="15"
-                    max="33"
-                    disabled={!isAdminOrSupervisor}
-                    value={settings.rfid_gate_power_dbm}
-                    onChange={(e) =>
-                      setSettings({ ...settings, rfid_gate_power_dbm: Number(e.target.value) })
-                    }
-                    className="mt-3 w-full accent-blue-600 disabled:opacity-50"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Mode Anti-Collision Reader
-                </label>
-                <select
-                  disabled={!isAdminOrSupervisor}
-                  value={settings.anti_collision_mode}
-                  onChange={(e) =>
-                    setSettings({ ...settings, anti_collision_mode: e.target.value })
-                  }
-                  className="mt-1 w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none disabled:opacity-60"
-                >
-                  <option value="Dense Reader Mode (M=4) - EPCglobal Gen2">
-                    Dense Reader Mode (M=4) - EPCglobal Gen2
-                  </option>
-                  <option value="Fast Tag Read Mode (M=2) - High Speed Conveyor">
-                    Fast Tag Read Mode (M=2) - High Speed Conveyor
-                  </option>
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700">
-                  Notifikasi Stok Minimum & Alarm Gate Otomatis
-                </label>
-                <div className="mt-2 flex items-center space-x-3">
-                  <input
-                    type="checkbox"
-                    id="notif-toggle"
-                    disabled={!isAdminOrSupervisor}
-                    checked={settings.alarm_siren_enabled}
-                    onChange={(e) =>
-                      setSettings({ ...settings, alarm_siren_enabled: e.target.checked })
-                    }
-                    className="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500"
-                  />
-                  <label htmlFor="notif-toggle" className="text-sm text-slate-600">
-                    Aktifkan peringatan stok kritis & sirine GPIO gerbang keluar
-                  </label>
-                </div>
-              </div>
-              <button
-                type="submit"
-                disabled={savingSettings || !isAdminOrSupervisor}
-                className="bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white px-5 py-2.5 rounded-xl text-sm font-medium shadow-md transition-all"
-              >
-                {savingSettings ? 'Menyimpan...' : 'Simpan Perubahan'}
-              </button>
-            </form>
-          )}
-        </div>
+                <Button type="submit" className="w-full">
+                  📡 Tembak Paket ke EMQX Broker
+                </Button>
+              </form>
 
-        {/* Panel Uji Pancar EMQX MQTT Broker */}
-        <div className="bg-slate-900 text-white p-6 rounded-2xl shadow-lg flex flex-col justify-between">
-          <div>
-            <span className="bg-blue-500/20 text-blue-300 text-xs px-2.5 py-1 rounded-full font-semibold">
-              EMQX MQTT Broker Diagnostic
-            </span>
-            <h3 className="text-lg font-bold mt-2">Simulator Pancaran Hardware ke MQTT</h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Uji kirim paket JSON dari Backend ke topik EMQX (TCP 1883 → WebSocket 8083) secara real-time.
-            </p>
-            <form onSubmit={handleTestMqttPublish} className="mt-5 space-y-4">
-              <div>
-                <label className="block text-xs text-slate-400 uppercase font-semibold mb-1">
-                  Topik MQTT Tujuan
-                </label>
-                <select
-                  value={testTopic}
-                  onChange={(e) => setTestTopic(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white"
-                >
-                  <option value="digiwms/rfid/gate-alarm">digiwms/rfid/gate-alarm</option>
-                  <option value="digiwms/rfid/encoded">digiwms/rfid/encoded</option>
-                  <option value="digiwms/ledger/updated">digiwms/ledger/updated</option>
-                </select>
+              <div className="p-4 bg-muted/50 rounded-lg border border-border">
+                <p className="text-[11px] font-semibold text-muted-foreground uppercase">
+                  Payload Terakhir Diterima Browser:
+                </p>
+                <pre className="text-xs font-mono text-emerald-600 dark:text-emerald-400 mt-2 overflow-x-auto">
+                  {lastEvent
+                    ? JSON.stringify(lastEvent, null, 2)
+                    : '// Menunggu transmisi dari topik digiwms/# ...'}
+                </pre>
               </div>
-              <div>
-                <label className="block text-xs text-slate-400 uppercase font-semibold mb-1">
-                  Kode EPC Uji Coba
-                </label>
-                <input
-                  type="text"
-                  value={testEpc}
-                  onChange={(e) => setTestEpc(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-sm font-mono text-emerald-400"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2.5 rounded-xl text-sm shadow-md transition"
-              >
-                📡 Tembak Paket ke EMQX Broker
-              </button>
-            </form>
-          </div>
-
-          <div className="mt-6 p-4 bg-slate-950 rounded-xl border border-slate-800">
-            <p className="text-[11px] font-semibold text-slate-400 uppercase">
-              Payload Terakhir Diterima Browser:
-            </p>
-            <pre className="text-xs font-mono text-emerald-400 mt-2 overflow-x-auto">
-              {lastEvent
-                ? JSON.stringify(lastEvent, null, 2)
-                : '// Menunggu transmisi dari topik digiwms/# ...'}
-            </pre>
-          </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
