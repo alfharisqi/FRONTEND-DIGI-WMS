@@ -3,8 +3,10 @@ import {
   ArrowRight,
   BookOpen,
   Boxes,
+  CheckCircle2,
   ClipboardList,
   Database,
+  GitBranch,
   HelpCircle,
   Layers,
   MapPin,
@@ -33,6 +35,7 @@ const DOC_GROUPS = [
     group: 'Pengenalan & Arsitektur',
     items: [
       { id: 'overview', title: 'Pengenalan & Arsitektur', icon: BookOpen },
+      { id: 'workflows', title: 'Alur Penggunaan End-to-End', icon: GitBranch },
       { id: 'rbac', title: 'Hak Akses & Keamanan (RBAC)', icon: ShieldCheck },
     ],
   },
@@ -73,6 +76,64 @@ function Callout({ tone = 'info', title, children }) {
     <div className={`rounded-xl border p-4 text-xs leading-relaxed ${styles}`}>
       {title && <p className="font-bold mb-1">{title}</p>}
       <div>{children}</div>
+    </div>
+  );
+}
+
+function FlowCard({ number, title, badge, role, steps, actionButton }) {
+  return (
+    <div className="rounded-xl border border-border bg-muted/20 p-4 sm:p-5 space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="default" className="font-mono text-[11px]">
+              Alur {number}
+            </Badge>
+            {badge && <Badge variant="secondary">{badge}</Badge>}
+            {role && (
+              <Badge variant="outline" className="text-[11px]">
+                Peran: {role}
+              </Badge>
+            )}
+          </div>
+          <h4 className="font-bold text-foreground text-base">{title}</h4>
+        </div>
+        {actionButton}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+        {steps.map((step, idx) => (
+          <div
+            key={step.title}
+            className="relative rounded-lg border border-border bg-background p-3 flex flex-col justify-between gap-2"
+          >
+            <div className="space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-[11px] font-bold text-primary">
+                  {idx + 1}
+                </span>
+                {step.menu && (
+                  <span className="text-[10px] font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+                    {step.menu}
+                  </span>
+                )}
+              </div>
+              <p className="font-semibold text-xs text-foreground pt-1">
+                {step.title}
+              </p>
+              <p className="text-[11px] text-muted-foreground leading-relaxed">
+                {step.desc}
+              </p>
+            </div>
+            {step.status && (
+              <div className="pt-1 border-t border-border/60 flex items-center gap-1 text-[10px] font-mono text-emerald-600 dark:text-emerald-400">
+                <CheckCircle2 className="h-3 w-3 shrink-0" />
+                <span>{step.status}</span>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -242,6 +303,234 @@ export default function HelpDocsPage({ switchTab }) {
                     <p className="text-xs text-muted-foreground">Antena pintu keluar otomatis meloloskan barang <code>AUTHORIZED_OUT</code> & membunyikan sirine jika masih <code>IN_STOCK</code>.</p>
                   </div>
                 </div>
+              </>
+            )}
+
+            {activeDoc === 'workflows' && (
+              <>
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+                  <div>
+                    <Badge variant="secondary" className="mb-2">Panduan Langkah demi Langkah</Badge>
+                    <h3 className="text-xl font-bold text-foreground">
+                      Alur Penggunaan Sistem (End-to-End)
+                    </h3>
+                  </div>
+                  {jumpButton('dashboard', 'Dashboard Utama')}
+                </div>
+
+                <p className="text-muted-foreground">
+                  Berikut ringkasan alur kerja lengkap dari awal barang datang hingga keluar gerbang, termasuk transaksi kasir, retur, dan audit stok agar seluruh tim gudang, kasir, dan keamanan bekerja selaras.
+                </p>
+
+                <div className="space-y-4">
+                  <FlowCard
+                    number="1"
+                    title="Barang Masuk Satuan → Tagging → Simpan ke Rak"
+                    badge="Inbound Satuan"
+                    role="WAREHOUSE_STAFF / ADMIN"
+                    actionButton={jumpButton('penerimaan', 'Penerimaan')}
+                    steps={[
+                      {
+                        menu: 'Stok Barang',
+                        title: 'Buat Master SKU',
+                        desc: 'Daftarkan kode SKU, nama produk, kategori, harga, dan stok minimum.',
+                        status: 'SKU Aktif',
+                      },
+                      {
+                        menu: 'Penerimaan',
+                        title: 'Catat & Verifikasi GRN',
+                        desc: 'Input dokumen PO/supplier lalu klik Verifikasi setelah hitung fisik cocok.',
+                        status: 'GRN SELESAI',
+                      },
+                      {
+                        menu: 'Tag & Encoding',
+                        title: 'Generate / Encode EPC',
+                        desc: 'Pilih GRN terverifikasi lalu cetak & daftarkan tag satuan atau batch (maks 100).',
+                        status: 'ENCODED (INB01)',
+                      },
+                      {
+                        menu: 'Penyimpanan Rak',
+                        title: 'Putaway ke Rak',
+                        desc: 'Pindahkan tag dari Staging INB01 ke rak tujuan agar menjadi stok siap jual.',
+                        status: 'IN_STOCK',
+                      },
+                    ]}
+                  />
+
+                  <FlowCard
+                    number="2"
+                    title="Barang Masuk Karton → Putaway Box → Break-Pack"
+                    badge="Kemasan Bertingkat"
+                    role="WAREHOUSE_STAFF / ADMIN"
+                    actionButton={jumpButton('master-box', 'Master Box')}
+                    steps={[
+                      {
+                        menu: 'Master Box',
+                        title: 'Registrasi Master Box',
+                        desc: 'Tempel 1 EPC di kardus besar, tentukan jumlah Inner Box & isi per dus.',
+                        status: 'SEALED (INB01)',
+                      },
+                      {
+                        menu: 'Penyimpanan Rak',
+                        title: 'Putaway Box ke Rak',
+                        desc: 'Pindahkan Box ke rak tujuan. Stok unit otomatis terhitung di rak.',
+                        status: 'IN_RACK',
+                      },
+                      {
+                        menu: 'Master Box / Rak',
+                        title: 'Break-Pack Tahap 1',
+                        desc: 'Pecah Master Carton menjadi beberapa Inner Box jika diperlukan.',
+                        status: 'INNER IN_RACK',
+                      },
+                      {
+                        menu: 'Master Box / Picking',
+                        title: 'Break-Pack Tahap 2',
+                        desc: 'Pecah Inner Box menjadi tag RFID satuan siap pick atau jual eceran.',
+                        status: 'IN_STOCK (Unit)',
+                      },
+                    ]}
+                  />
+
+                  <FlowCard
+                    number="3"
+                    title="Order Gudang → Picking → Packing → Pengiriman & Gerbang"
+                    badge="Outbound B2B"
+                    role="WAREHOUSE_STAFF & SECURITY"
+                    actionButton={jumpButton('picking', 'Picking & Packing')}
+                    steps={[
+                      {
+                        menu: 'Picking & Packing',
+                        title: 'Buat Order & Scan EPC',
+                        desc: 'Pilih produk pesanan, lalu scan EPC dari rak (atau klik Pecah Box langsung).',
+                        status: 'RESERVED',
+                      },
+                      {
+                        menu: 'Picking & Packing',
+                        title: 'Checklist & Selesai Packing',
+                        desc: 'Centang 5 poin verifikasi lalu konfirmasi selesai packing.',
+                        status: 'AUTHORIZED_OUT',
+                      },
+                      {
+                        menu: 'Pengiriman',
+                        title: 'Buat Surat Jalan & Pass',
+                        desc: 'Pilih sumber (Picking / POS / Stok Bebas) untuk menerbitkan Gate Pass.',
+                        status: 'GATE PASS ACTIVE',
+                      },
+                      {
+                        menu: 'Keamanan & Pass',
+                        title: 'Scan Gerbang Keluar',
+                        desc: 'Antena/petugas verifikasi di gerbang. Barang sah lewat tanpa alarm.',
+                        status: 'EXITED / PASS USED',
+                      },
+                    ]}
+                  />
+
+                  <FlowCard
+                    number="4"
+                    title="Penjualan Langsung di Toko (Kasir POS → Gerbang)"
+                    badge="Retail / POS"
+                    role="WAREHOUSE_STAFF / KASIR"
+                    actionButton={jumpButton('pos', 'Kasir POS')}
+                    steps={[
+                      {
+                        menu: 'Kasir POS',
+                        title: 'Scan Tag atau Box Utuh',
+                        desc: 'Scan via Desktop RFID (live MQTT) atau input EPC/Box yang berstatus siap di rak.',
+                        status: 'Keranjang POS',
+                      },
+                      {
+                        menu: 'Kasir POS',
+                        title: 'Pilih Metode & Bayar',
+                        desc: 'Proses pembayaran tunai/QRIS/transfer lalu selesaikan checkout.',
+                        status: 'Transaksi Lunas',
+                      },
+                      {
+                        menu: 'Otomatis Sistem',
+                        title: 'Otorisasi & Gate Pass',
+                        desc: 'Item otomatis berubah ke AUTHORIZED_OUT / SHIPPED dengan Gate Pass aktif.',
+                        status: 'AUTHORIZED_OUT',
+                      },
+                      {
+                        menu: 'Keamanan & Pass',
+                        title: 'Pelanggan Lewat Gerbang',
+                        desc: 'Lampu hijau menyala saat pelanggan membawa barang keluar pintu.',
+                        status: 'EXITED',
+                      },
+                    ]}
+                  />
+
+                  <FlowCard
+                    number="5"
+                    title="Pengembalian Barang Pelanggan (Retur POS)"
+                    badge="Purnajual"
+                    role="WAREHOUSE_STAFF / SUPERVISOR"
+                    actionButton={jumpButton('retur', 'Retur POS')}
+                    steps={[
+                      {
+                        menu: 'Retur POS',
+                        title: 'Input / Scan EPC Retur',
+                        desc: 'Masukkan nomor struk atau scan EPC barang yang dikembalikan pelanggan.',
+                        status: 'Validasi Struk',
+                      },
+                      {
+                        menu: 'Retur POS',
+                        title: 'Cek Kondisi Barang',
+                        desc: 'Pastikan barang layak jual kembali dan konfirmasi proses retur.',
+                        status: 'RETURN_RESTOCK',
+                      },
+                      {
+                        menu: 'Otomatis Sistem',
+                        title: 'Kembali ke Stok Gudang',
+                        desc: 'Status tag dikembalikan ke IN_STOCK dan dicatat di ledger mutasi.',
+                        status: 'IN_STOCK',
+                      },
+                      {
+                        menu: 'Penyimpanan Rak',
+                        title: 'Kembalikan ke Rak',
+                        desc: 'Letakkan fisik barang kembali ke rak penyimpanannya.',
+                        status: 'Siap Jual Ulang',
+                      },
+                    ]}
+                  />
+
+                  <FlowCard
+                    number="6"
+                    title="Audit Stock Opname & Penanganan Alarm Gerbang"
+                    badge="Audit & Security"
+                    role="SUPERVISOR & SECURITY"
+                    actionButton={jumpButton('rfid-opname', 'Opname Handheld')}
+                    steps={[
+                      {
+                        menu: 'Opname Handheld',
+                        title: 'Scan Zona Rak',
+                        desc: 'Pilih zona lalu scan seluruh Tag & Box. Sistem cek MATCH / MISSING / MISPLACED.',
+                        status: 'Sesi Opname',
+                      },
+                      {
+                        menu: 'Opname Handheld',
+                        title: 'Approval Supervisor',
+                        desc: 'Supervisor menyetujui selisih opname untuk merekonsiliasi ledger stok.',
+                        status: 'Ledger Tersinkron',
+                      },
+                      {
+                        menu: 'Monitor Gate',
+                        title: 'Deteksi Sirine Breach',
+                        desc: 'Jika barang IN_STOCK / IN_RACK melewati pintu tanpa izin, alarm CRITICAL aktif.',
+                        status: 'ALARM CRITICAL',
+                      },
+                      {
+                        menu: 'Keamanan & Pass',
+                        title: 'Investigasi & Resolve',
+                        desc: 'Petugas keamanan memeriksa barang di gerbang lalu menandai insiden selesai.',
+                        status: 'RESOLVED',
+                      },
+                    ]}
+                  />
+                </div>
+
+                <Callout tone="success" title="Tips Penting Sebelum Uji Coba">
+                  Pastikan setiap barang baru sudah melewati tahap <strong>Putaway</strong> hingga berstatus <code>IN_STOCK</code> (atau <code>IN_RACK</code> untuk Box) sebelum dicoba di menu <strong>Picking</strong>, <strong>Kasir POS</strong>, maupun <strong>Pengiriman</strong>.
+                </Callout>
               </>
             )}
 
